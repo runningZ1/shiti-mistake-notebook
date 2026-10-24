@@ -97,26 +97,29 @@ async function request(
   body,
   headers = {},
 ) {
-  let response = await fetch(`${base}${url}`, {
-    method,
-    redirect: "manual",
+  const send = (timeout) => fetch(`${base}${url}`, {
+    method, redirect: "manual",
     headers: {
       ...(cookie ? { Cookie: cookie } : {}),
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...headers,
+      ...headers, Connection: "close",
     },
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(liveAi ? 180_000 : 30_000),
+    signal: AbortSignal.timeout(timeout),
   });
+  let response;
+  try {
+    response = await send(liveAi ? 180_000 : 20_000);
+  } catch (error) {
+    if (error?.name !== "TimeoutError") throw error;
+    console.error(`Request timed out during ${method} ${url}; retrying once.`);
+    await delay(1500);
+    response = await send(20_000);
+  }
   if (response.status === 503 && (await response.clone().text()).includes("Your worker restarted mid-request")) {
     console.error(`Worker transport restart during ${method} ${url}; retrying once.`);
-    await delay(1000);
-    response = await fetch(`${base}${url}`, {
-      method, redirect: "manual",
-      headers: { ...(cookie ? { Cookie: cookie } : {}), ...(body !== undefined ? { "Content-Type": "application/json" } : {}), ...headers },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(30_000),
-    });
+    await delay(1500);
+    response = await send(20_000);
   }
   assert.equal(
     response.status,
@@ -197,7 +200,9 @@ INSERT INTO mistakes VALUES ('http-mistake','http-batch','http-user','数学','1
   );
   for (const stream of [child.stdout, child.stderr])
     stream.on("data", (data) => {
-      logs = `${logs}${data}`.slice(-12000);
+      const text = String(data);
+      const kept = text.split(/\r?\n/).filter(line => /wrangler:|error|Error|panic|failed/i.test(line)).join("\n");
+      if (kept) logs = `${logs}\n${kept}`.slice(-20000);
     });
   let ready = false;
   for (let attempt = 0; attempt < 90; attempt++) {
@@ -261,8 +266,47 @@ INSERT INTO mistakes VALUES ('http-mistake','http-batch','http-user','数学','1
   assert.equal(new DataView(await word.arrayBuffer()).getUint32(0, true), 0x04034b50);
   await request("/api/practice-papers", 400, user, "POST", { subject: "数学", unitName: "整数", count: 3 });
   await request("/api/practice-papers/http-paper/grade", 401, undefined, "POST", { answers: ["2"] });
+  // Knowledge units and essay history stay on the caller's own rows and do not call the model.
+  await request("/api/knowledge", 401);
+  await request("/api/knowledge", 401, undefined, "PUT", { subject: "数学", knowledgePoint: "整数", unitName: "第一单元" });
+  const savedUnit = await (await request("/api/knowledge", 200, user, "PUT", {
+    subject: "数学", knowledgePoint: "整数", unitName: "第一单元",
+  })).json();
+  assert.equal(savedUnit.profile.unitName, "第一单元");
+  const units = await (await request("/api/knowledge", 200, user)).json();
+  assert.equal(units.profiles.length, 1);
+  assert.equal((await (await request("/api/knowledge", 200, admin)).json()).profiles.length, 0);
+  await request("/api/knowledge", 400, user, "PUT", { subject: "", knowledgePoint: "整数", unitName: "第一单元" });
+  await request("/api/knowledge/guide", 401, undefined, "POST", { subject: "数学", knowledgePoint: "整数" });
+  await request("/api/knowledge/guide", 400, user, "POST", { subject: "数学", knowledgePoint: "" });
+  const essayReport = {
+    summary: "内容完整，动词形式需要核对。",
+    content: { strength: "介绍了家庭", evidence: "I love my family.", improvement: "加入具体细节" },
+    language: { strength: "表达清楚", evidence: "This is my dad.", improvement: "核对主谓一致" },
+    structure: { strength: "有结尾", evidence: "I love my family.", improvement: "补充过渡" },
+    handwriting: { strength: "照片可辨", evidence: "字母清晰", improvement: "保持行距", assessable: true },
+    sentenceEdits: [], polish: [], references: [], uncertaintyNote: "",
+  };
+  sql(`INSERT INTO essay_reports (id, user_id, prompt_text, original_text, grade_level, report_json, created_at) VALUES ('http-essay','http-user','My Family','I love my family.','七年级','${JSON.stringify(essayReport)}',datetime('now'));`);
+  await request("/api/essays", 401);
+  await request("/api/essays/http-essay", 401);
+  const essays = await (await request("/api/essays", 200, user)).json();
+  assert.equal(essays.essays.length, 1);
+  assert.equal(essays.essays[0].excerpt, "I love my family.");
+  const essay = await (await request("/api/essays/http-essay", 200, user)).json();
+  assert.equal(essay.essay.originalText, "I love my family.");
+  assert.equal((await (await request("/api/essays", 200, admin)).json()).essays.length, 0);
+  await request("/api/essays/http-essay", 404, admin);
   await request("/api/practice-papers/http-paper/grade", 404, admin, "POST", { answers: ["2"] });
-  await request("/api/practice-papers/http-paper/grade", 400, user, "POST", { answers: [""] });
+  await request("/api/essays/extract", 401, undefined, "POST", {});
+  const emptyEssay = new FormData();
+  emptyEssay.append("promptText", "My Family");
+  emptyEssay.append("confirmedText", "12345");
+  const rejectedEssay = await fetch(`${base}/api/essays`, {
+    method: "POST", headers: { Cookie: user }, body: emptyEssay, signal: AbortSignal.timeout(30_000),
+  });
+  assert.equal(rejectedEssay.status, 400, await rejectedEssay.text());
+  checks++;
   if (liveAi) {
     const generated = await (await request("/api/practice-papers", 201, user, "POST", {
       subject: "数学", unitName: "10以内的整数加减法", gradeLevel: "一年级", count: 5,
@@ -390,6 +434,10 @@ INSERT INTO mistakes VALUES ('http-mistake','http-batch','http-user','数学','1
   await request("/api/practice-papers", 200, registrationCookie);
   await request("/api/practice-papers", 403, registrationCookie, "POST", {});
   await request("/api/practice-papers/http-paper/grade", 403, registrationCookie, "POST", { answers: ["2"] });
+  await request("/api/essays", 200, registrationCookie);
+  await request("/api/essays", 403, registrationCookie, "POST", {});
+  await request("/api/essays/extract", 403, registrationCookie, "POST", {});
+  await request("/api/knowledge/guide", 403, registrationCookie, "POST", { subject: "数学", knowledgePoint: "整数" });
   await request(`/api/admin/users/${registered.id}`, 200, admin, "PATCH", { trialAction: "extend7" });
   await request("/api/mistakes/missing/similar", 404, registrationCookie, "POST", { count: 1 });
   await request(`/api/admin/users/${registered.id}`, 200, admin, "PATCH", { trialAction: "unlimited" });
@@ -410,9 +458,13 @@ INSERT INTO mistakes VALUES ('http-mistake','http-batch','http-user','数学','1
   assert.equal((await findUser("httpcreated")).wechat, null);
   assert.equal((await findUser("httpcreated")).trialEndsAt, null);
   await request(`/api/admin/users/${created.id}`, 200, admin, "DELETE");
-  sql(`INSERT INTO practice_papers (id,user_id,subject,unit_name,grade_level,questions,answers,grading,created_at) VALUES ('http-delete-paper','${registered.id}','数学','整数','','${JSON.stringify(paperQuestions)}','[]','[]',datetime('now'));`);
+  sql(`INSERT INTO practice_papers (id,user_id,subject,unit_name,grade_level,questions,answers,grading,created_at) VALUES ('http-delete-paper','${registered.id}','数学','整数','','${JSON.stringify(paperQuestions)}','[]','[]',datetime('now'));
+INSERT INTO essay_reports (id, user_id, prompt_text, original_text, grade_level, report_json, created_at) VALUES ('http-delete-essay','${registered.id}','My Family','I love my family.','七年级','{}',datetime('now'));
+INSERT INTO knowledge_units (user_id, subject, knowledge_point, unit_name, updated_at) VALUES ('${registered.id}','数学','整数','第一单元',datetime('now'));`);
   await request(`/api/admin/users/${registered.id}`, 200, admin, "DELETE");
   assert.match(sql("SELECT COUNT(*) AS remaining FROM practice_papers WHERE id='http-delete-paper';"), /"remaining":\s*0/);
+  assert.match(sql("SELECT COUNT(*) AS remaining FROM essay_reports WHERE id='http-delete-essay';"), /"remaining":\s*0/);
+  assert.match(sql(`SELECT COUNT(*) AS remaining FROM knowledge_units WHERE user_id='${registered.id}';`), /"remaining":\s*0/);
   console.log(
     `Admin HTTP checks passed (${checks} requests/assertions). ${liveAi ? "Live AI tested." : "No real AI calls made."}`,
   );

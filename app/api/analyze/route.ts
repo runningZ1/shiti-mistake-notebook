@@ -17,7 +17,6 @@ export async function POST(request: Request) {
   const auth = await authenticateForAi();
   if ("response" in auth) return auth.response;
   const user = auth.user;
-  if (!aiConfigured()) return Response.json({ error: "AI 分析服务尚未配置，暂时无法处理图片" }, { status: 503 });
   if (!env.DB || !env.BUCKET) return Response.json({ error: "存储服务暂不可用" }, { status: 503 });
 
   try {
@@ -28,6 +27,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "仅支持 JPG、PNG、WEBP，单张不超过 8MB" }, { status: 400 });
     }
 
+    if (!aiConfigured()) return Response.json({ error: "AI 分析服务尚未配置，暂时无法处理图片" }, { status: 503 });
     const images = await Promise.all(files.map(async file => {
       const bytes = new Uint8Array(await file.arrayBuffer());
       return { bytes, mime: file.type, base64: toBase64(bytes) };

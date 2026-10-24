@@ -11,7 +11,6 @@ export async function POST(request: Request) {
   const auth = await authenticateForAi();
   if ("response" in auth) return auth.response;
   if (!env.DB) return Response.json({ error: "存储服务暂不可用" }, { status: 503 });
-  if (!aiConfigured()) return Response.json({ error: "AI 服务尚未配置" }, { status: 503 });
 
   const body = await request.json().catch(() => null) as { subject?: unknown; knowledgePoint?: unknown } | null;
   const subject = typeof body?.subject === "string" ? body.subject.trim() : "";
@@ -19,6 +18,7 @@ export async function POST(request: Request) {
   if (!subject || subject.length > 30 || !point || point.length > 100) {
     return Response.json({ error: "请选择有效的知识点" }, { status: 400 });
   }
+  if (!aiConfigured()) return Response.json({ error: "AI 服务尚未配置" }, { status: 503 });
 
   try {
     const profile = await env.DB.prepare("SELECT unit_name, guide FROM knowledge_units WHERE user_id = ? AND subject = ? AND knowledge_point = ?")

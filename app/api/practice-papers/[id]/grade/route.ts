@@ -6,18 +6,19 @@ import type { PracticeGrade } from "@/lib/practice-types";
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authenticateForAi();
   if ("response" in auth) return auth.response;
-  if (!aiConfigured()) return Response.json({ error: "AI 服务尚未配置" }, { status: 503 });
   const body = await request.json().catch(() => null) as { answers?: unknown } | null;
-  if (!Array.isArray(body?.answers) || body.answers.some(answer => typeof answer !== "string" || answer.length > 2000)) {
-    return Response.json({ error: "作答格式不正确，单题最多 2000 字" }, { status: 400 });
+  if (!Array.isArray(body?.answers) || body.answers.some(answer => typeof answer !== "string" || answer.length > 2000) ||
+    !body.answers.some(answer => answer.trim())) {
+    return Response.json({ error: "作答格式不正确，请至少完成一题，单题最多 2000 字" }, { status: 400 });
   }
   try {
     const id = (await params).id;
     const row = await getPracticePaper(id, auth.user.userId);
     if (!row) return Response.json({ error: "练习卷不存在" }, { status: 404 });
+    if (!aiConfigured()) return Response.json({ error: "AI 服务尚未配置" }, { status: 503 });
     const { questions } = parsePaper(row);
-    if (body.answers.length !== questions.length || !body.answers.some(answer => answer.trim())) {
-      return Response.json({ error: "请至少完成一题再提交批改" }, { status: 400 });
+    if (body.answers.length !== questions.length) {
+      return Response.json({ error: "作答数量与题目数量不一致" }, { status: 400 });
     }
     const answers = body.answers.map(answer => answer.trim()) as string[];
     const result = await gradeUnitPaper(questions, answers);

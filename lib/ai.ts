@@ -1,5 +1,8 @@
 import { env } from "cloudflare:workers";
 import type { PracticeQuestion, PracticeVerdict } from "@/lib/practice-types";
+import { parseEssayExtraction, parseEssayReport, type EssayExtraction, type EssayReport } from "@/lib/essay-types";
+import type { KnowledgeGuide } from "@/lib/knowledge-types";
+import { practiceBlueprint, type PracticeQuestionKind } from "@/lib/practice-blueprint";
 
 type AiResponse = { output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string }> }>; error?: { message?: string } };
 
@@ -105,12 +108,24 @@ const unitPaperSchema = {
           answer: { type: "string" },
           explanation: { type: "string" },
           knowledgePoint: { type: "string" },
+          kind: { type: "string", enum: ["concept", "method", "misconception", "application", "synthesis"] },
         },
-        required: ["question", "answer", "explanation", "knowledgePoint"],
+        required: ["question", "answer", "explanation", "knowledgePoint", "kind"],
       },
     },
   },
   required: ["questions"],
+};
+
+const knowledgeGuideSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    coreIdea: { type: "string" },
+    commonMistake: { type: "string" },
+    firstStep: { type: "string" },
+  },
+  required: ["coreIdea", "commonMistake", "firstStep"],
 };
 
 const practiceGradingSchema = {
@@ -132,6 +147,61 @@ const practiceGradingSchema = {
     },
   },
   required: ["grading"],
+};
+
+const essayFeedbackSchema = {
+  type: "object", additionalProperties: false,
+  properties: { strength: { type: "string" }, evidence: { type: "string" }, improvement: { type: "string" } },
+  required: ["strength", "evidence", "improvement"],
+};
+
+const essayExtractionSchema = {
+  type: "object", additionalProperties: false,
+  properties: {
+    promptText: { type: "string" }, essayText: { type: "string" },
+    uncertainNote: { type: "string" }, teacherMarksNote: { type: "string" },
+  },
+  required: ["promptText", "essayText", "uncertainNote", "teacherMarksNote"],
+};
+
+const essayReportSchema = {
+  type: "object", additionalProperties: false,
+  properties: {
+    summary: { type: "string" },
+    content: essayFeedbackSchema, language: essayFeedbackSchema, structure: essayFeedbackSchema,
+    handwriting: {
+      type: "object", additionalProperties: false,
+      properties: { ...essayFeedbackSchema.properties, assessable: { type: "boolean" } },
+      required: ["strength", "evidence", "improvement", "assessable"],
+    },
+    sentenceEdits: {
+      type: "array", items: {
+        type: "object", additionalProperties: false,
+        properties: {
+          original: { type: "string" }, suggested: { type: "string" },
+          issueType: { type: "string", enum: ["spelling", "grammar", "punctuation", "expression"] },
+          explanation: { type: "string" },
+        },
+        required: ["original", "suggested", "issueType", "explanation"],
+      },
+    },
+    polish: {
+      type: "array", items: {
+        type: "object", additionalProperties: false,
+        properties: { original: { type: "string" }, polished: { type: "string" }, reason: { type: "string" } },
+        required: ["original", "polished", "reason"],
+      },
+    },
+    references: {
+      type: "array", items: {
+        type: "object", additionalProperties: false,
+        properties: { purpose: { type: "string" }, example: { type: "string" }, usage: { type: "string" } },
+        required: ["purpose", "example", "usage"],
+      },
+    },
+    uncertaintyNote: { type: "string" },
+  },
+  required: ["summary", "content", "language", "structure", "handwriting", "sentenceEdits", "polish", "references", "uncertaintyNote"],
 };
 
 export type AnalyzedMistake = {
@@ -182,6 +252,26 @@ export async function analyzePages(images: Array<{ mime: string; base64: string 
   return result;
 }
 
+export async function extractEssay(images: Array<{ mime: string; base64: string }>, promptHint: string): Promise<EssayExtraction> {
+  const content = [
+    { type: "input_text", text: `这些图片包含英语作文题目、学生手写原稿，可能还有教师批改。请只抄录题目要求和学生实际写出的英文作文，保持原有词序、拼写、大小写和标点；不要照着教师红笔修改原文，也不要替学生补词。按阅读顺序合并多张图片。无法辨认的词用 [看不清] 占位，并在 uncertainNote 中说明；如学生正文完全不可读，essayText 留空。teacherMarksNote 只概述明显可辨认的教师批注，不把它们混进 essayText。忽略姓名、班级、学号、二维码等个人信息，也不要输出。用户补充的题目要求（只作线索，照片上有冲突时待用户核对）：${promptHint.slice(0, 2000)}。` },
+    ...images.map(image => ({ type: "input_image", image_url: `data:${image.mime};base64,${image.base64}`, detail: "high" })),
+  ];
+  return parseEssayExtraction(await requestAi([{ role: "user", content }], "essay_extraction", essayExtractionSchema));
+}
+
+export async function analyzeEssay(input: {
+  confirmedText: string; promptText: string; gradeLevel: string;
+  images: Array<{ mime: string; base64: string }>;
+}): Promise<EssayReport> {
+  const content = [
+    { type: "input_text", text: `请依据用户确认的英语作文原文和题目要求，生成面向学生的作文分析。确认后的原文是唯一可信的学生文字；照片只用来辅助判断书写清晰度和教师已有批注。不能把批改笔迹、学生姓名、班级、二维码或照片上与原文无关的内容写进报告。题目要求：${input.promptText || "未提供，请勿臆造题目要求"}。年级：${input.gradeLevel || "未提供"}。确认后的原文：${input.confirmedText}。
+请分别点评内容覆盖、语言表达、篇章结构、书写可辨性；每项写一个具体优点、一条原文证据和下一步建议。书写看不清时 handwriting.assessable=false，其他字段可说明原因。不要给总分或等级。sentenceEdits 只列可确认的拼写、语法、标点及明显表达问题，original 必须从确认后的原文逐字引用，建议句保留原意；纯风格优化放在 polish，不作为错误。polish 选 2～3 处原句，仍需逐字引用，按原句、润色句、原因说明。references 给 1～3 条适合本题的开头、过渡或结尾参考表达，不能称为班级金句、不能虚构同学作品，不要生成可直接代交的整篇范文。若题目、某处字迹或评分条件不确定，在 uncertaintyNote 说明。全部说明文字用简体中文，英文例句保持英文。` },
+    ...input.images.map(image => ({ type: "input_image", image_url: `data:${image.mime};base64,${image.base64}`, detail: "high" })),
+  ];
+  return parseEssayReport(await requestAi([{ role: "user", content }], "essay_report", essayReportSchema), input.confirmedText);
+}
+
 export async function createSimilar(question: string, knowledgePoint: string, subject: string, count: number, previousQuestions: string[] = []): Promise<SimilarQuestion[]> {
   const avoidRepeats = previousQuestions.length ? `\n已生成的练习题（不要重复）：${previousQuestions.slice(-20).join("；")}` : "";
   const input = [{ role: "user", content: [{ type: "input_text", text: `请针对下面这道${subject}错题，围绕相同的知识点出恰好 ${count} 道不同的练习题，难度从易到中等。每题有准确答案和简短解题思路。不要直接照抄原题。用简体中文。\n知识点：${knowledgePoint}\n原题：${question}${avoidRepeats}` }] }];
@@ -190,24 +280,53 @@ export async function createSimilar(question: string, knowledgePoint: string, su
   return result.questions;
 }
 
+export async function createKnowledgeGuide(input: {
+  subject: string; knowledgePoint: string; unitName: string;
+  examples: Array<{ question: string; incorrectAnswer: string; correctAnswer: string }>;
+}): Promise<KnowledgeGuide> {
+  const examples = input.examples.slice(0, 2).map(item => ({
+    question: item.question.slice(0, 350),
+    incorrectAnswer: item.incorrectAnswer.slice(0, 150),
+    correctAnswer: item.correctAnswer.slice(0, 150),
+  }));
+  const prompt = `请为中小学生解释${input.subject}知识点“${input.knowledgePoint}”（单元：${input.unitName || "未指定"}）。用不超过 180 字讲清核心概念；根据提供的错题线索描述一种“可能的误区”，不要断言学生一定如此；最后给出无需直接公布答案的第一步学习建议。不能照抄错题作新题，也不能把猜测写成诊断。错题线索：${JSON.stringify(examples)}。`;
+  const result = await requestAi([{ role: "user", content: [{ type: "input_text", text: prompt }] }], "knowledge_guide", knowledgeGuideSchema) as KnowledgeGuide;
+  if (!result || [result.coreIdea, result.commonMistake, result.firstStep].some(value => typeof value !== "string" || !value.trim() || value.length > 800)) {
+    throw new Error("概念提示生成不完整，请重试");
+  }
+  return {
+    coreIdea: result.coreIdea.trim(),
+    commonMistake: result.commonMistake.trim(),
+    firstStep: result.firstStep.trim(),
+  };
+}
+
 export async function createUnitPaper(input: {
-  subject: string; unitName: string; gradeLevel: string; count: number;
+  subject: string; unitName: string; gradeLevel: string; count: 3 | 5 | 10;
+  focusPoints: string[];
   weakPoints: Array<{ name: string; count: number; example: string }>;
 }): Promise<PracticeQuestion[]> {
+  const plan = practiceBlueprint(input.count);
   const context = JSON.stringify(input.weakPoints.slice(0, 12));
-  const prompt = `请为${input.gradeLevel || "中小学"}${input.subject}的“${input.unitName}”单元生成恰好 ${input.count} 道新的练习题。题目从基础概念到方法运用递进，覆盖该单元的主要知识点；每题有独立可判定的答案、简要解析和知识点名称。不要照抄错题，也不要生成依赖缺失图片或材料才能作答的题。下面是该学生过去的薄弱点数据（仅在确属本单元时优先覆盖；其他单元的内容必须忽略）：${context}。全部使用简体中文。`;
+  const sequence = plan.map((kind, index) => `第${index + 1}题 kind=${kind}`).join("；");
+  const prompt = `请为${input.gradeLevel || "中小学"}${input.subject}的“${input.unitName}”单元生成恰好 ${input.count} 道全新的练习题。严格按顺序与题型蓝图出题：${sequence}。concept 考基础概念，method 考典型方法，misconception 考常见错误辨析，application 考迁移应用，synthesis 考综合运用；每题 kind 必须与对应编号一致。用户确认要覆盖的知识点：${JSON.stringify(input.focusPoints)}，每个点至少在一道题的 knowledgePoint 中使用原名称；如不属于该单元，不得悄悄换成其他知识点。其余题覆盖该单元主要内容。每题有独立可判定的答案和准确、简明的解析。不要照抄错题、重复题干、生成依赖缺失图片或材料才能作答的题。下面是该学生过去的错题线索（只可参考确属本单元的部分）：${context}。全部使用简体中文。`;
   const result = await requestAi([{ role: "user", content: [{ type: "input_text", text: prompt }] }], "unit_practice_paper", unitPaperSchema) as { questions?: PracticeQuestion[] };
-  if (!Array.isArray(result?.questions) || result.questions.length !== input.count || result.questions.some(item =>
+  if (!Array.isArray(result?.questions) || result.questions.length !== input.count || result.questions.some((item, index) =>
     !item || typeof item.question !== "string" || !item.question.trim() || item.question.length > 2500 ||
     typeof item.answer !== "string" || !item.answer.trim() || item.answer.length > 1500 ||
     typeof item.explanation !== "string" || !item.explanation.trim() || item.explanation.length > 3000 ||
-    typeof item.knowledgePoint !== "string" || !item.knowledgePoint.trim() || item.knowledgePoint.length > 100
+    typeof item.knowledgePoint !== "string" || !item.knowledgePoint.trim() || item.knowledgePoint.length > 100 ||
+    item.kind !== plan[index]
   )) {
     throw new Error("练习卷生成不完整，请重试");
   }
+  const normalizedQuestions = result.questions.map(item => item.question.trim().replace(/\s+/g, ""));
+  if (new Set(normalizedQuestions).size !== result.questions.length || input.focusPoints.some(point => !result.questions!.some(item => item.knowledgePoint.trim() === point))) {
+    throw new Error("练习卷未覆盖所选知识点或存在重复题目，请重试");
+  }
   return result.questions.map(item => ({
     question: item.question.trim(), answer: item.answer.trim(),
-    explanation: item.explanation.trim(), knowledgePoint: item.knowledgePoint.trim(),
+    explanation: item.explanation.trim(), knowledgePoint: item.knowledgePoint.trim(), kind: item.kind as PracticeQuestionKind,
   }));
 }
 

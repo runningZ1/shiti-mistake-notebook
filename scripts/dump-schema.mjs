@@ -110,11 +110,16 @@ const schema = Object.create(null);
 for (const table of tables) schema[table] = [];
 
 if (tables.length > 0) {
-  const union = tables
-    .map((t) => `SELECT ${quoteLiteral(t)} AS tbl, name AS col FROM pragma_table_info(${quoteIdent(t)})`)
-    .join(" UNION ALL ");
-  for (const row of runQuery(union, "查列名")) {
-    if (Object.hasOwn(schema, row.tbl)) schema[row.tbl].push(row.col);
+  // D1 一条语句最多 5 个 UNION ALL（SQLITE_ERROR: too many terms in compound SELECT）。
+  // 表一多就得分批，每批最多 5 张。
+  for (let start = 0; start < tables.length; start += 5) {
+    const batch = tables.slice(start, start + 5);
+    const union = batch
+      .map((t) => `SELECT ${quoteLiteral(t)} AS tbl, name AS col FROM pragma_table_info(${quoteIdent(t)})`)
+      .join(" UNION ALL ");
+    for (const row of runQuery(union, "查列名")) {
+      if (Object.hasOwn(schema, row.tbl)) schema[row.tbl].push(row.col);
+    }
   }
 }
 

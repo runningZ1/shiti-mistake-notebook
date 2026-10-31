@@ -5,7 +5,7 @@ export default function Landing() {
   return <div className="landing-page">
     <header className="landing-header">
       <Link className="landing-brand" href="/" aria-label="拾题首页"><span className="landing-brand-mark"><BookOpen size={23} /></span><strong>拾题</strong><small>智能错题本</small></Link>
-      <nav aria-label="首页导航"><a href="#how-it-works">使用方法</a><a href="#features">功能介绍</a><a className="landing-login" href="/login">登录</a><a className="landing-nav-cta" href="/register">免费体验 <ArrowRight size={15} /></a></nav>
+      <nav aria-label="首页导航"><a href="#how-it-works">使用方法</a><a href="#features">功能介绍</a><Link href="/pricing">会员方案</Link><a className="landing-login" href="/login">登录</a><a className="landing-nav-cta" href="/register">免费体验 <ArrowRight size={15} /></a></nav>
     </header>
 
     <main>
@@ -35,8 +35,8 @@ export default function Landing() {
 
       <section className="landing-steps" id="how-it-works"><div><span>01 / 上传</span><strong>拍清题目与作答</strong></div><div><span>02 / 批改</span><strong>查看逐题结果与解析</strong></div><div><span>03 / 巩固</span><strong>收藏错题并继续练习</strong></div></section>
 
-      <section className="landing-bottom"><div><span>给每一次认真作答一个好去处</span><h2>新用户免费体验 7 天</h2><p>体验到期后仍可查看已有错题；继续分析和生成练习，可联系管理员开通。</p></div><a href="/register">立即创建账号 <ArrowRight size={18} /></a></section>
+      <section className="landing-bottom"><div><span>给每一次认真作答一个好去处</span><h2>新用户免费体验 7 天</h2><p>体验到期后仍可查看已有错题；继续分析和生成练习，可升级 VIP 会员（¥99/月）。</p></div><div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}><Link href="/pricing" style={{ background: "rgba(255,255,255,0.12)", color: "#fff", padding: "14px 20px", borderRadius: "9px", fontSize: "12px", fontWeight: 700, border: "1px solid rgba(255,255,255,0.2)" }}>会员方案 (¥99/月)</Link><a href="/register">立即创建账号 <ArrowRight size={18} /></a></div></section>
     </main>
-    <footer className="landing-footer"><span>拾题 · 把每一次错误，变成进步</span><span>智能批改供学习参考，请核对重要答案。</span></footer>
+    <footer className="landing-footer"><div><span>拾题 · 把每一次错误，变成进步</span><span style={{ margin: "0 8px" }}>·</span><Link href="/pricing" style={{ color: "#7765bd", fontWeight: 700 }}>会员价格</Link></div><span>智能批改供学习参考，请核对重要答案。</span></footer>
   </div>;
 }

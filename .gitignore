@@ -68,3 +68,5 @@ tsconfig.tsbuildinfo
 # Real user data (kid's homework photos, mistake exports).
 # Transferred to the server out-of-band, never committed.
 /用户数据/
+
+.tmp-domain/

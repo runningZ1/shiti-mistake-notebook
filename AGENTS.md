@@ -196,8 +196,9 @@ AND NOT EXISTS (SELECT 1 FROM users WHERE role='admin')`。限定「系统里一
 ## 部署
 
 服务器 `198.44.177.126`，路径 `/opt/shiti-mistake-notebook`，pm2 进程名 `shiti-notebook`，
-nginx 反代到 `127.0.0.1:3105`。两个入口：**https://study.zxai.studio/**（主入口，Let's Encrypt
-证书）和 http://198.44.177.126:8095/（IP 直连备用）。
+nginx 反代到 `127.0.0.1:3105`。两个入口：**https://study.chumenclub.com/**（主入口）和
+http://198.44.177.126:8095/（IP 直连备用）。`study.trumen.club` 与 `study.zxai.studio`
+只做 301 跳转到主入口。
 
 服务器上有两个配置文件，都不进 Git：
 
@@ -206,9 +207,17 @@ nginx 反代到 `127.0.0.1:3105`。两个入口：**https://study.zxai.studio/**
   只有初始化/部署脚本读它，**故意与 `.dev.vars` 分开**，免得明文登录密码被 wrangler 装进
   worker 的 `env` 里。
 
-nginx 侧集中在 snippet `/etc/nginx/snippets/shiti-app.conf`（两个 server block 都 `include`
-它），登录接口限速在 `/etc/nginx/conf.d/shiti-limit.conf`——**改代理配置只改这两处**。
-`study.zxai.studio` 的证书由 `certbot --nginx` 管理并自动续期，不要手改那个文件的 443 段。
+nginx 侧集中在 snippet `/etc/nginx/snippets/shiti-app.conf`（`study.chumenclub.com`
+与 8095 都 `include` 它），登录接口限速在 `/etc/nginx/conf.d/shiti-limit.conf`——
+**改代理配置只改这两处**。
+
+`study.chumenclub.com` 的 DNS 在 DNSPod（`chumenclub.com` 的 NS 是 `ara.dnspod.net`／
+`orange.dnspod.net`），A 记录直连 `198.44.177.126`，不经过 Cloudflare。
+证书在 `/etc/letsencrypt/live/study.chumenclub.com/`，由 `certbot --nginx` 管理并自动续期，
+**不要手改** `/etc/nginx/sites-available/study.chumenclub.com` 的 443 段。
+
+`study.trumen.club` 的 A 记录仍在 Cloudflare，已改成 DNS only（灰色云），源站 80/443 只做跳转。
+它的证书用 webroot 续期，站点文件里的 `/.well-known/acme-challenge/` 要留着。
 
 `deploy.sh` 会拉取、装依赖、构建、迁移、播种账号、重启、验证；任一步失败即中止。
 

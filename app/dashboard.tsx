@@ -8,7 +8,8 @@ import KnowledgeMap from "./knowledge-map";
 import UnitPractice from "./unit-practice";
 import EssayAnalysis from "./essay-analysis";
 import MathText from "./math-text";
-import { ArrowRight, BookOpen, CalendarDays, Camera, Check, CheckCircle2, ChevronDown, Clock3, CloudUpload, FileImage, Filter, Lightbulb, LoaderCircle, LogOut, Menu, Plus, FileDown, Search, Sparkles, Trash2, UploadCloud, X, Network, ClipboardList, PenLine } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, BookOpen, CalendarDays, Camera, Check, CheckCircle2, ChevronDown, Clock3, CloudUpload, Crown, FileImage, Filter, Lightbulb, LoaderCircle, LogOut, Menu, Plus, FileDown, Search, Sparkles, Trash2, UploadCloud, X, Network, ClipboardList, PenLine } from "lucide-react";
 
 type Similar = { question: string; answer: string; explanation: string };
 type Mistake = {
@@ -191,7 +192,7 @@ export default function Dashboard({ name, trialEndsAt, role }: { name: string; t
 
   async function analyze() {
     if (!selected.length) { fileRef.current?.click(); return; }
-    if (trialExpired) { setError("7 天免费体验已结束，请联系管理员延长或开通使用权限。"); return; }
+    if (trialExpired) { setError("7 天免费体验已结束，请前往会员方案（¥99/月）开通使用权限。"); return; }
     if (aiReady === false) { setError("AI 服务尚未配置，当前不能自动分析。请完成服务端密钥配置。"); return; }
     setTipIndex(0); setUploading(true); setError("");
     try {
@@ -209,7 +210,7 @@ export default function Dashboard({ name, trialEndsAt, role }: { name: string; t
   }
 
   async function requestSimilar(id: string, count: number) {
-    if (trialExpired) { setError("7 天免费体验已结束，请联系管理员延长或开通使用权限。"); return; }
+    if (trialExpired) { setError("7 天免费体验已结束，请前往会员方案（¥99/月）开通使用权限。"); return; }
     setBusySimilar(id); setError("");
     try {
       const response = await fetch(`/api/mistakes/${id}/similar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ count }) });
@@ -268,6 +269,14 @@ export default function Dashboard({ name, trialEndsAt, role }: { name: string; t
       <nav className="side-nav"><button className={tab === "home" ? "active" : ""} onClick={() => { setTab("home"); setMobileMenu(false); }}><span><Sparkles size={19} />学习工作台</span><ArrowRight size={16} /></button><button className={tab === "notebook" ? "active" : ""} onClick={() => { setTab("notebook"); setMobileMenu(false); }}><span><BookOpen size={19} />我的错题本</span><em>{mistakes.length}</em></button><button className={tab === "essay" ? "active" : ""} onClick={() => { setTab("essay"); setMobileMenu(false); }}><span><PenLine size={19} />英语作文分析</span><ArrowRight size={16} /></button><button className={tab === "knowledge" ? "active" : ""} onClick={() => { setTab("knowledge"); setMobileMenu(false); }}><span><Network size={19} />知识图谱</span><ArrowRight size={16} /></button><button className={tab === "practice" ? "active" : ""} onClick={() => openPractice()}><span><ClipboardList size={19} />单元练习卷</span><em>{papers.length}</em></button></nav>
       <div className="sidebar-section-label subjects-label">科目分类</div>
       <div className="subject-nav">{(subjects.length ? subjects : ["数学", "语文", "英语"]).slice(0, 6).map((item, index) => <button key={item} onClick={() => { setSubject(item); setTab("notebook"); setMobileMenu(false); }}><span className={`subject-dot ${subjectColors[item] || "sand"}`} />{item}<span className="subject-count">{subjects.length ? mistakes.filter(m => m.subject === item).length : index === 0 ? "" : ""}</span></button>)}</div>
+      <Link href="/pricing" className="sidebar-pricing-badge" onClick={() => setMobileMenu(false)}>
+        <span className="badge-icon"><Crown size={17} /></span>
+        <div>
+          <strong>VIP 会员方案</strong>
+          <small>¥99/月 · 畅学全学科</small>
+        </div>
+        <ArrowRight size={14} />
+      </Link>
       <div className="sidebar-spacer" />
       <div className="sidebar-tip"><div className="tip-icon"><Lightbulb size={19} /></div><strong>每道错题都值得被看见</strong><p>拍照上传，整理思路，练习同类题。</p></div>
       <div className="sidebar-profile"><span className="avatar">{name.slice(0, 1)}</span><div><strong>{name}</strong><small>我的学习空间</small></div><button className="logout-button" onClick={signOut} title="退出登录" aria-label="退出登录"><LogOut size={15} /></button></div>
@@ -278,7 +287,7 @@ export default function Dashboard({ name, trialEndsAt, role }: { name: string; t
     <main className="main-area">
       <header className="topbar"><button className="mobile-menu" onClick={() => setMobileMenu(!mobileMenu)} aria-label={mobileMenu ? "关闭菜单" : "打开菜单"} aria-expanded={mobileMenu}><Menu size={22} /></button><div className="breadcrumb">学习空间 <span>/</span> <strong>{tab === "home" ? "学习工作台" : tab === "results" ? "分析结果" : tab === "knowledge" ? "知识图谱" : tab === "practice" ? "单元练习卷" : tab === "essay" ? "英语作文分析" : "我的错题本"}</strong></div><div className="top-right"><span className="today"><CalendarDays size={16} />{new Date().toLocaleDateString("zh-CN", { month: "long", day: "numeric" })}</span><span className="small-avatar">{name.slice(0, 1)}</span></div></header>
       <div className="content-wrap">
-        {trialEndsAt && role !== "admin" && <div className={`trial-banner ${trialExpired ? "expired" : ""}`} role="status"><Sparkles size={18} /><span suppressHydrationWarning>{trialExpired ? "免费体验已结束。已有错题仍可查看；若要继续分析或生成练习，请联系管理员延长或开通，开通后刷新页面。" : `免费体验进行中，截止时间：${new Date(trialEndsAt).toLocaleString("zh-CN", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}。`}</span></div>}
+        {trialEndsAt && role !== "admin" && <div className={`trial-banner ${trialExpired ? "expired" : ""}`} role="status"><Sparkles size={18} /><span suppressHydrationWarning>{trialExpired ? "免费体验已结束。已有错题仍可查看；若要继续分析或生成练习，请升级 VIP 会员（¥99/月），开通后刷新页面。" : `免费体验进行中，截止时间：${new Date(trialEndsAt).toLocaleString("zh-CN", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}。`}</span><Link href="/pricing" className="trial-upgrade-btn">{trialExpired ? "立即开通 VIP" : "会员方案"}</Link></div>}
         {error && <div className="error-banner" role="alert"><span>{error}</span><button onClick={() => setError("")} aria-label="关闭提示"><X size={17} /></button></div>}
         {tab === "home" && <>
           <section className="welcome-row"><div><div className="eyebrow"><span className="eyebrow-line" /> YOUR LEARNING DESK</div><h1>你好，{name}<span className="wave">✳</span></h1><p>把今天不懂的题，变成明天会做的题。</p></div><span className="welcome-date"><Clock3 size={16} />今天也在认真进步</span></section>

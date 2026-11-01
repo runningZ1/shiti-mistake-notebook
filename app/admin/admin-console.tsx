@@ -45,6 +45,7 @@ type User = {
   lastLoginAt: string | null;
   wechat: string | null;
   trialEndsAt: string | null;
+  deletionStartedAt: string | null;
 };
 type Page = {
   total: number;
@@ -97,7 +98,8 @@ function useData<T>(url: string) {
   const [version, setVersion] = useState(0);
   useEffect(() => {
     let active = true;
-    request<T>(url)
+    const controller = new AbortController();
+    request<T>(url, { signal: controller.signal })
       .then((data) => {
         if (active) setState({ data, url, version });
       })
@@ -106,6 +108,7 @@ function useData<T>(url: string) {
       });
     return () => {
       active = false;
+      controller.abort();
     };
   }, [url, version]);
   const loading = state.url !== url || state.version !== version;
@@ -124,21 +127,21 @@ function Loading({ error, retry }: { error?: string; retry: () => void }) {
           <button onClick={retry}>重新加载</button>
         </>
       ) : (
-        <p role="status">正在加载…</p>
+        <div role="status" aria-label="正在加载后台数据" className="ac-loading"><span>正在加载后台数据…</span><div /><div /><div /></div>
       )}
     </div>
   );
 }
 function Empty() {
-  return <div className="ac-empty">暂无符合条件的记录</div>;
+  return <div className="ac-empty"><BookOpen size={26} aria-hidden="true" /><p>暂无符合条件的记录</p><small>可以清除筛选条件，或调整关键词后重新查询。</small></div>;
 }
 function Badge({ children }: { children: ReactNode }) {
   return <span className="ac-badge">{children}</span>;
 }
-function Panel({ title, children }: { title: string; children: ReactNode }) {
+function Panel({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
   return (
     <section className="ac-panel">
-      <h2>{title}</h2>
+      <div className="ac-panel-heading"><h2>{title}</h2>{action}</div>
       {children}
     </section>
   );
@@ -229,6 +232,26 @@ export default function AdminConsole({
 }) {
   const [tab, setTab] = useState<Tab>("overview");
   const [revision, setRevision] = useState(0);
+  const [context, setContext] = useState({ userId: "", uploadId: "", subject: "" });
+  useEffect(() => {
+    const sync = () => {
+      const params = new URLSearchParams(window.location.search);
+      const selected = params.get("tab");
+      setTab(tabs.some((item) => item.id === selected) ? selected as Tab : "overview");
+      setContext({ userId: params.get("userId") || "", uploadId: params.get("uploadId") || "", subject: params.get("subject") || "" });
+      setRevision((value) => value + 1);
+    };
+    sync();
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+  }, []);
+  function navigate(next: Tab, filters = { userId: "", uploadId: "", subject: "" }) {
+    const params = new URLSearchParams({ tab: next });
+    Object.entries(filters).forEach(([key, value]) => { if (value) params.set(key, value); });
+    window.history.pushState(null, "", `/admin?${params}`);
+    setContext(filters);
+    setTab(next);
+  }
   return (
     <div className="ac-shell">
       <aside className="ac-sidebar">
@@ -245,7 +268,7 @@ export default function AdminConsole({
               key={id}
               className={tab === id ? "selected" : ""}
               aria-current={tab === id ? "page" : undefined}
-              onClick={() => setTab(id)}
+              onClick={() => navigate(id)}
             >
               <Icon size={18} />
               {label}
@@ -263,33 +286,34 @@ export default function AdminConsole({
       <main className="ac-main">
         <header className="ac-top">
           <h1>{tabs.find((t) => t.id === tab)?.label}</h1>
-          <button onClick={() => setRevision((v) => v + 1)}>
+          <button onClick={() => { const params = new URLSearchParams(window.location.search); setContext({ userId: params.get("userId") || "", uploadId: params.get("uploadId") || "", subject: params.get("subject") || "" }); setRevision((v) => v + 1); }}>
             <RefreshCw size={15} />
             刷新
           </button>
         </header>
-        <div className="ac-content" key={`${tab}-${revision}`}>
+        <div className="ac-content" key={`${tab}-${revision}-${context.userId}-${context.uploadId}-${context.subject}`}>
           {tab === "overview" ? (
-            <Overview />
+            <Overview navigate={navigate} />
           ) : tab === "users" ? (
-            <UserManager self={currentUserId} />
+            <UserManager self={currentUserId} navigate={navigate} />
           ) : tab === "system" ? (
             <System />
           ) : (
-            <ContentManager kind={tab} />
+            <ContentManager kind={tab} initialFilters={context} navigate={navigate} />
           )}
         </div>
       </main>
     </div>
   );
 }
-function Overview() {
+type Navigate = (tab: Tab, filters?: { userId: string; uploadId: string; subject: string }) => void;
+function Overview({ navigate }: { navigate: Navigate }) {
   const { data, error, refresh } =
     useData<AdminOverviewStats>("/api/admin/stats");
   if (!data) return <Loading error={error} retry={refresh} />;
   return (
     <>
-      <p className="ac-intro">查看全站数据与最近活动。</p>
+      <div className="ac-page-heading"><div><h2>全站运行概况</h2><p className="ac-intro">查看账号、学习内容与最近活动，选择记录继续管理。</p></div><button className="ac-primary" onClick={() => navigate("users")}>管理用户</button></div>
       <div className="ac-stats">
         {[
           ["用户总数", data.totalUsers],
@@ -305,24 +329,24 @@ function Overview() {
         ))}
       </div>
       <div className="ac-grid">
-        <Panel title="学科分布">
+        <Panel title="学科分布" action={<button className="ac-text-button" onClick={() => navigate("mistakes")}>查看全部错题</button>}>
           {data.subjectDistribution.length ? (
             data.subjectDistribution.map((s) => (
               <div className="ac-distribution" key={s.subject}>
                 <div>
-                  <span>{s.subject}</span>
+                  <button className="ac-text-button" onClick={() => navigate("mistakes", { subject: s.subject, userId: "", uploadId: "" })}>{s.subject}</button>
                   <small>
                     {s.count} 题 · {s.percentage}%
                   </small>
                 </div>
-                <progress max={100} value={s.percentage} />
+                <progress aria-label={`${s.subject}错题占比`} max={100} value={s.percentage} title={`${s.subject}：${s.count} 道，占全部错题 ${s.percentage}%`} />
               </div>
             ))
           ) : (
             <Empty />
           )}
         </Panel>
-        <Panel title="最近录入的错题">
+        <Panel title="最近录入的错题" action={<button className="ac-text-button" onClick={() => navigate("mistakes")}>管理错题</button>}>
           {data.recentMistakes.length ? (
             data.recentMistakes.map((m) => (
               <article className="ac-activity" key={m.id}>
@@ -337,7 +361,7 @@ function Overview() {
             <Empty />
           )}
         </Panel>
-        <Panel title="最新注册用户">
+        <Panel title="最新注册用户" action={<button className="ac-text-button" onClick={() => navigate("users")}>管理用户</button>}>
           {data.recentUsers.length ? (
             data.recentUsers.map((u) => (
               <article className="ac-activity" key={u.id}>
@@ -352,7 +376,7 @@ function Overview() {
             <Empty />
           )}
         </Panel>
-        <Panel title="最近上传批次">
+        <Panel title="最近上传批次" action={<button className="ac-text-button" onClick={() => navigate("uploads")}>管理上传</button>}>
           {data.recentUploads.length ? (
             data.recentUploads.map((u) => (
               <article className="ac-activity" key={u.id}>
@@ -374,13 +398,15 @@ function Overview() {
 type UserModal =
   | { mode: "create" }
   | { mode: "edit" | "password" | "delete" | "status" | "trial"; user: User };
-function UserManager({ self }: { self: string }) {
+function UserManager({ self, navigate }: { self: string; navigate: Navigate }) {
   const { data, error, refresh } = useData<{ users: User[] }>(
     "/api/admin/users",
   );
   const [search, setSearch] = useState("");
   const [role, setRole] = useState("");
   const [status, setStatus] = useState("");
+  const [access, setAccess] = useState("");
+  const [sort, setSort] = useState("created");
   const [page, setPage] = useState(1);
   const [modal, setModal] = useState<UserModal | null>(null);
   const [notice, setNotice] = useState("");
@@ -395,8 +421,9 @@ function UserManager({ self }: { self: string }) {
         .toLowerCase()
         .includes(search.toLowerCase()) &&
       (!role || u.role === role) &&
-      (!status || u.status === status),
-  );
+      (!status || u.status === status) &&
+      (!access || (access === "unlimited" ? u.trialEndsAt === null : access === "expired" ? u.trialEndsAt !== null && Date.parse(u.trialEndsAt) <= now : u.trialEndsAt !== null && Date.parse(u.trialEndsAt) > now)),
+  ).sort((a, b) => sort === "mistakes" ? b.mistakeCount - a.mistakeCount : sort === "login" ? Date.parse(b.lastLoginAt || "1970-01-01") - Date.parse(a.lastLoginAt || "1970-01-01") : Date.parse(b.createdAt) - Date.parse(a.createdAt));
   const totalPages = Math.max(1, Math.ceil(list.length / 20));
   const shownPage = Math.min(page, totalPages);
   // 剪贴板 API 只在 HTTPS 下可用；IP 直连的 http 入口会失败，此时提示手动复制
@@ -452,6 +479,18 @@ function UserManager({ self }: { self: string }) {
           <option value="active">已启用</option>
           <option value="disabled">已停用</option>
         </select>
+        <select aria-label="使用权限筛选" value={access} onChange={(e) => { setAccess(e.target.value); setPage(1); }}>
+          <option value="">全部使用权限</option>
+          <option value="trial">体验中</option>
+          <option value="expired">体验已到期</option>
+          <option value="unlimited">长期可用</option>
+        </select>
+        <select aria-label="用户排序" value={sort} onChange={(e) => { setSort(e.target.value); setPage(1); }}>
+          <option value="created">最新注册优先</option>
+          <option value="login">最近登录优先</option>
+          <option value="mistakes">错题数量优先</option>
+        </select>
+        {(search || role || status || access) && <button onClick={() => { setSearch(""); setRole(""); setStatus(""); setAccess(""); setPage(1); }}>清除筛选</button>}
         <button
           className="ac-primary"
           onClick={() => setModal({ mode: "create" })}
@@ -506,29 +545,31 @@ function UserManager({ self }: { self: string }) {
                         {u.role === "admin" ? "管理员" : "普通用户"}
                       </Badge>{" "}
                       <Badge>
-                        {u.status === "active" ? "已启用" : "已停用"}
+                        {u.deletionStartedAt ? "删除中，等待清理" : u.status === "active" ? "已启用" : "已停用"}
                       </Badge>
                     </td>
                     <td>{u.trialEndsAt === null ? "长期可用" : Date.parse(u.trialEndsAt) <= now ? "试用已到期" : `试用至 ${date(u.trialEndsAt)}`}</td>
-                    <td>{u.mistakeCount}</td>
+                    <td><button className="ac-text-button" onClick={() => navigate("mistakes", { userId: u.id, uploadId: "", subject: "" })}>{u.mistakeCount} 道错题</button><small>注册于 {date(u.createdAt)}</small></td>
                     <td>{date(u.lastLoginAt)}</td>
                     <td>
                       <div className="ac-actions">
                         <button
+                          disabled={!!u.deletionStartedAt}
                           onClick={() => setModal({ mode: "edit", user: u })}
                         >
                           编辑
                         </button>
                         <button
+                          disabled={!!u.deletionStartedAt}
                           onClick={() =>
                             setModal({ mode: "password", user: u })
                           }
                         >
                           重置密码
                         </button>
-                        {u.trialEndsAt !== null && <button onClick={() => setModal({ mode: "trial", user: u })}>试用期</button>}
+                        {u.trialEndsAt !== null && <button disabled={!!u.deletionStartedAt} onClick={() => setModal({ mode: "trial", user: u })}>试用期</button>}
                         <button
-                          disabled={u.id === self}
+                          disabled={u.id === self || !!u.deletionStartedAt}
                           title={
                             u.id === self ? "不能停用自己的账号" : undefined
                           }
@@ -541,7 +582,7 @@ function UserManager({ self }: { self: string }) {
                           disabled={u.id === self}
                           onClick={() => setModal({ mode: "delete", user: u })}
                         >
-                          删除
+                          {u.deletionStartedAt ? "继续删除" : "删除"}
                         </button>
                       </div>
                     </td>
@@ -594,6 +635,7 @@ function UserEditor({
   const [password, setPassword] = useState("");
   const [trialAction, setTrialAction] = useState<"extend7" | "unlimited">("extend7");
   const [confirm, setConfirm] = useState("");
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const title = {
@@ -618,6 +660,7 @@ function UserEditor({
       invalid ||=
         checkPassword(password) ||
         (password !== confirm ? "两次密码不一致" : null);
+    if (modal.mode === "delete" && deleteConfirmation !== user?.username) invalid = "请输入完整用户名确认删除";
     if (invalid) {
       setError(invalid);
       return;
@@ -743,12 +786,10 @@ function UserEditor({
               )}
             </>
           )}
-          {modal.mode === "delete" && (
-            <p className="ac-warning">
-              将永久删除该账号、{user?.mistakeCount}{" "}
-              道错题和全部上传原图，无法恢复。
-            </p>
-          )}
+          {modal.mode === "delete" && <>
+            <p className="ac-warning">将先停用账号，再永久删除该账号、{user?.mistakeCount} 道错题、全部上传原图、练习卷、知识点记录与作文报告，无法恢复。</p>
+            <Field label={`输入用户名 ${user?.username} 确认删除`}><input required autoComplete="off" value={deleteConfirmation} onChange={(e) => setDeleteConfirmation(e.target.value)} /></Field>
+          </>}
           {modal.mode === "status" && (
             <p>
               {user?.status === "active"
@@ -778,7 +819,7 @@ function UserEditor({
             className={
               modal.mode === "delete" ? "ac-destructive" : "ac-primary"
             }
-            disabled={busy}
+            disabled={busy || (modal.mode === "delete" && deleteConfirmation !== user?.username)}
           >
             {busy
               ? "处理中…"
@@ -791,12 +832,14 @@ function UserEditor({
     </Modal>
   );
 }
-function ContentManager({ kind }: { kind: "mistakes" | "uploads" }) {
-  const [filters, setFilters] = useState({
-    search: "",
-    subject: "",
-    userId: "",
-  });
+function ContentManager({ kind, initialFilters, navigate }: { kind: "mistakes" | "uploads"; initialFilters: { userId: string; uploadId: string; subject: string }; navigate: Navigate }) {
+  const [filters, setFilters] = useState(() => ({ search: typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("search") || "", ...initialFilters }));
+  function persistFilters(next: typeof filters) {
+    const params = new URLSearchParams({ tab: kind });
+    Object.entries(next).forEach(([key, value]) => { if (value) params.set(key, value); });
+    window.history.pushState(null, "", `/admin?${params}`);
+    setFilters(next);
+  }
   const [draft, setDraft] = useState(filters);
   const [page, setPage] = useState(1);
   const query = new URLSearchParams({
@@ -806,6 +849,8 @@ function ContentManager({ kind }: { kind: "mistakes" | "uploads" }) {
   });
   const { data, error, refresh } = useData<Page>(`/api/admin/${kind}?${query}`);
   const users = useData<{ users: User[] }>("/api/admin/users");
+  const stats = useData<AdminOverviewStats>("/api/admin/stats");
+  const availableSubjects = [...new Set([...subjects, ...(stats.data?.subjectDistribution.map((item) => item.subject) || [])])];
   const [editing, setEditing] = useState<AdminMistakeItem | null>(null);
   const [deleting, setDeleting] = useState<
     AdminMistakeItem | AdminUploadItem | null
@@ -915,11 +960,13 @@ function ContentManager({ kind }: { kind: "mistakes" | "uploads" }) {
           {actionError}
         </p>
       )}
+      {filters.uploadId && <p className="ac-context" role="status">正在查看指定上传批次的错题 <button onClick={() => navigate("uploads")}>返回上传批次</button></p>}
+      {stats.error && <p className="ac-error" role="alert">学科选项加载失败：{stats.error} <button onClick={stats.refresh}>重新加载学科</button></p>}
       <form
         className="ac-toolbar"
         onSubmit={(e) => {
           e.preventDefault();
-          setFilters(draft);
+          persistFilters(draft);
           setPage(1);
         }}
       >
@@ -938,7 +985,7 @@ function ContentManager({ kind }: { kind: "mistakes" | "uploads" }) {
             onChange={(e) => setDraft({ ...draft, subject: e.target.value })}
           >
             <option value="">全部学科</option>
-            {subjects.map((s) => (
+            {availableSubjects.map((s) => (
               <option key={s}>{s}</option>
             ))}
           </select>
@@ -963,8 +1010,8 @@ function ContentManager({ kind }: { kind: "mistakes" | "uploads" }) {
         <button
           type="button"
           onClick={() => {
-            const empty = { search: "", subject: "", userId: "" };
-            setFilters(empty);
+            const empty = { search: "", subject: "", userId: "", uploadId: "" };
+            persistFilters(empty);
             setDraft(empty);
             setPage(1);
           }}
@@ -1061,16 +1108,10 @@ function ContentManager({ kind }: { kind: "mistakes" | "uploads" }) {
                           <small>{date(u.createdAt)}</small>
                         </td>
                         <td>
-                          <button
-                            className="ac-danger"
-                            disabled={busy}
-                            onClick={() => {
-                              setActionError("");
-                              setDeleting(u);
-                            }}
-                          >
-                            删除整批
-                          </button>
+                          <div className="ac-actions">
+                            <button onClick={() => navigate("mistakes", { userId: u.userId, uploadId: u.id, subject: "" })}>查看关联错题</button>
+                            <button className="ac-danger" disabled={busy} onClick={() => { setActionError(""); setDeleting(u); }}>删除整批</button>
+                          </div>
                         </td>
                       </tr>
                     ))}

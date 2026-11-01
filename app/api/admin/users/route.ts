@@ -1,4 +1,3 @@
-import { env } from "cloudflare:workers";
 import { authenticateAdmin } from "@/lib/api-guard";
 import { hashPassword } from "@/lib/auth";
 import { insertUser, isUniqueViolation, listUsersWithCounts } from "@/lib/users";
@@ -63,8 +62,6 @@ export async function POST(request: Request) {
     // 管理员建号时微信号选填：线下认识的人可能已经是好友了
     checkWechat(wechat, false);
   if (invalid) return fail(invalid, 400);
-
-  if (!env.DB) return fail("存储服务暂不可用", 503);
 
   const id = crypto.randomUUID();
   try {

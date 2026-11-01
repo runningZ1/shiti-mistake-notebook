@@ -1,45 +1,54 @@
-import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { check, foreignKey, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
-// 登录账号。`id` 同时是 uploads/mistakes 里的 `user_id`，
-// 播种时默认沿用历史值 "shiti"，否则老错题会因为查不到而看起来"消失"。
-//
-// 加列时必须带 .default()：SQLite 的 `ALTER TABLE ADD COLUMN ... NOT NULL`
-// 在表里已有数据、又没给默认值时会直接报错，迁移当场失败。而这里的表全都是
-// 有存量数据的，所以 notNull 的列一律配默认值，一个都不能漏。
-export const users = sqliteTable("users", {
+const time = (name: string) => timestamp(name, { withTimezone: true, mode: "string" });
+
+export const users = pgTable("users", {
   id: text("id").primaryKey(),
   username: text("username").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   displayName: text("display_name").notNull(),
-  createdAt: text("created_at").notNull(),
-  // 'user' | 'admin'。管理员能进 /admin 管账号。
+  createdAt: time("created_at").notNull().defaultNow(),
   role: text("role").notNull().default("user"),
-  // 'active' | 'disabled'。停用后该账号的会话立刻失效（配合 sessionEpoch）。
   status: text("status").notNull().default("active"),
-  // 会话版本号。管理员重置密码或停用账号时 +1，把这个用户已签发的 cookie 全部作废。
-  // 会话本身是无状态的，不这么做的话旧 cookie 会一直有效到 30 天后过期。
   sessionEpoch: integer("session_epoch").notNull().default(0),
-  // 可空：从没登录过就是 NULL，后台列表里显示成「从未登录」。
-  lastLoginAt: text("last_login_at"),
-  // 微信号，注册时必填，方便管理员主动添加。可空：老账号和管理员建的号可能没有。
+  lastLoginAt: time("last_login_at"),
   wechat: text("wechat"),
-  // NULL = 长期可用（存量账号及管理员创建的账号）。自行注册的新账号有 7 天试用期。
-  trialEndsAt: text("trial_ends_at"),
-});
+  trialEndsAt: time("trial_ends_at"),
+  deletionStartedAt: time("deletion_started_at"),
+}, table => [
+  check("users_role_check", sql`${table.role} IN ('user', 'admin')`),
+  check("users_status_check", sql`${table.status} IN ('active', 'disabled')`),
+  check("users_session_epoch_check", sql`${table.sessionEpoch} >= 0`),
+  check("users_deletion_status_check", sql`${table.deletionStartedAt} IS NULL OR ${table.status} = 'disabled'`),
+  index("users_created_idx").on(table.createdAt, table.id),
+]);
 
-export const uploads = sqliteTable("uploads", {
+export const uploads = pgTable("uploads", {
   id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   subject: text("subject").notNull(),
-  fileKeys: text("file_keys").notNull(),
-  fileNames: text("file_names").notNull(),
-  createdAt: text("created_at").notNull(),
-});
+  fileKeys: jsonb("file_keys").$type<string[]>().notNull(),
+  fileNames: jsonb("file_names").$type<string[]>().notNull(),
+  createdAt: time("created_at").notNull().defaultNow(),
+}, table => [
+  uniqueIndex("uploads_id_user_idx").on(table.id, table.userId),
+  index("uploads_user_created_idx").on(table.userId, table.createdAt, table.id),
+  check("uploads_file_keys_array", sql`jsonb_typeof(${table.fileKeys}) = 'array'`),
+  check("uploads_file_names_array", sql`jsonb_typeof(${table.fileNames}) = 'array'`),
+]);
 
-export const mistakes = sqliteTable("mistakes", {
+// 图片内容写入之前持久保存 multipart 标识，删除账号时据此中止上传。
+export const uploadObjects = pgTable("upload_objects", {
+  key: text("key").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  multipartId: text("multipart_id").notNull(),
+}, table => [index("upload_objects_user_idx").on(table.userId)]);
+
+export const mistakes = pgTable("mistakes", {
   id: text("id").primaryKey(),
-  uploadId: text("upload_id").notNull().references(() => uploads.id),
-  userId: text("user_id").notNull(),
+  uploadId: text("upload_id").notNull().references(() => uploads.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   subject: text("subject").notNull(),
   question: text("question").notNull(),
   incorrectAnswer: text("incorrect_answer").notNull(),
@@ -48,41 +57,45 @@ export const mistakes = sqliteTable("mistakes", {
   knowledgePoint: text("knowledge_point").notNull(),
   pageNumber: integer("page_number").notNull(),
   sourceName: text("source_name").notNull(),
-  similarQuestions: text("similar_questions").notNull().default("[]"),
-  createdAt: text("created_at").notNull(),
-});
+  similarQuestions: jsonb("similar_questions").notNull().default([]),
+  createdAt: time("created_at").notNull().defaultNow(),
+}, table => [
+  foreignKey({ name: "mistakes_upload_user_fk", columns: [table.uploadId, table.userId], foreignColumns: [uploads.id, uploads.userId] }).onDelete("cascade"),
+  index("mistakes_user_created_idx").on(table.userId, table.createdAt, table.id),
+  index("mistakes_upload_idx").on(table.uploadId),
+  index("mistakes_subject_created_idx").on(table.subject, table.createdAt, table.id),
+  check("mistakes_page_number_check", sql`${table.pageNumber} > 0`),
+  check("mistakes_similar_array", sql`jsonb_typeof(${table.similarQuestions}) = 'array'`),
+]);
 
-// 单元练习卷只保存当前用户的数据；重做时更新最近一次作答与批改结果。
-export const practicePapers = sqliteTable("practice_papers", {
+export const practicePapers = pgTable("practice_papers", {
   id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   subject: text("subject").notNull(),
   unitName: text("unit_name").notNull(),
   gradeLevel: text("grade_level").notNull().default(""),
-  questions: text("questions").notNull(),
-  answers: text("answers").notNull().default("[]"),
-  grading: text("grading").notNull().default("[]"),
-  createdAt: text("created_at").notNull(),
-  gradedAt: text("graded_at"),
-});
+  questions: jsonb("questions").notNull(),
+  answers: jsonb("answers").notNull().default([]),
+  grading: jsonb("grading").notNull().default([]),
+  createdAt: time("created_at").notNull().defaultNow(),
+  gradedAt: time("graded_at"),
+}, table => [index("practice_papers_user_created_idx").on(table.userId, table.createdAt, table.id)]);
 
-// 用户确认的知识点归属与已生成的概念提示。错误次数仍由原始错题和练习记录计算。
-export const knowledgeUnits = sqliteTable("knowledge_units", {
-  userId: text("user_id").notNull(),
+export const knowledgeUnits = pgTable("knowledge_units", {
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   subject: text("subject").notNull(),
   knowledgePoint: text("knowledge_point").notNull(),
   unitName: text("unit_name").notNull().default(""),
-  guide: text("guide").notNull().default(""),
-  updatedAt: text("updated_at").notNull(),
+  guide: jsonb("guide"),
+  updatedAt: time("updated_at").notNull().defaultNow(),
 }, table => [primaryKey({ columns: [table.userId, table.subject, table.knowledgePoint] })]);
 
-// 作文照片仅用于本次识别和分析；长期只保存用户确认的原文及报告。
-export const essayReports = sqliteTable("essay_reports", {
+export const essayReports = pgTable("essay_reports", {
   id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   promptText: text("prompt_text").notNull().default(""),
   originalText: text("original_text").notNull(),
   gradeLevel: text("grade_level").notNull().default(""),
-  reportJson: text("report_json").notNull(),
-  createdAt: text("created_at").notNull(),
-}, table => [index("essay_reports_user_created_idx").on(table.userId, table.createdAt)]);
+  reportJson: jsonb("report_json").notNull(),
+  createdAt: time("created_at").notNull().defaultNow(),
+}, table => [index("essay_reports_user_created_idx").on(table.userId, table.createdAt, table.id)]);

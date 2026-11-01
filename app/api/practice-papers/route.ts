@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { query } from "@/db/client";
 import { authenticate, authenticateForAi } from "@/lib/api-guard";
 import { aiConfigured, createUnitPaper } from "@/lib/ai";
 import { insertPracticePaper, listPracticePapers, paperDetail, paperSummary } from "@/lib/practice-papers";
@@ -25,7 +25,6 @@ export async function POST(request: Request) {
   const auth = await authenticateForAi();
   if ("response" in auth) return auth.response;
   if (!aiConfigured()) return fail("AI 服务尚未配置", 503);
-  if (!env.DB) return fail("存储服务暂不可用", 503);
 
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const subject = typeof body?.subject === "string" ? body.subject.trim() : "";
@@ -43,11 +42,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    const mapped = await env.DB.prepare("SELECT knowledge_point FROM knowledge_units WHERE user_id = ? AND subject = ? AND unit_name = ?")
-      .bind(auth.user.userId, subject, unitName).all<{ knowledge_point: string }>();
-    const allowedPoints = new Set([...focusPoints, ...mapped.results.map(row => normalizeKnowledgePoint(row.knowledge_point))]);
-    const { results } = await env.DB.prepare("SELECT knowledge_point, question FROM mistakes WHERE user_id = ? AND subject = ? ORDER BY created_at DESC LIMIT 100")
-      .bind(auth.user.userId, subject).all<{ knowledge_point: string; question: string }>();
+    const { rows: mapped } = await query<{ knowledge_point: string }>("SELECT knowledge_point FROM knowledge_units WHERE user_id = $1 AND subject = $2 AND unit_name = $3",
+      [auth.user.userId, subject, unitName]);
+    const allowedPoints = new Set([...focusPoints, ...mapped.map(row => normalizeKnowledgePoint(row.knowledge_point))]);
+    const { rows: results } = await query<{ knowledge_point: string; question: string }>("SELECT knowledge_point, question FROM mistakes WHERE user_id = $1 AND subject = $2 ORDER BY created_at DESC LIMIT 100",
+      [auth.user.userId, subject]);
     const weak = new Map<string, { name: string; count: number; example: string }>();
     for (const row of results) {
       const name = normalizeKnowledgePoint(row.knowledge_point);
@@ -64,7 +63,7 @@ export async function POST(request: Request) {
     const createdAt = new Date().toISOString();
     const row = {
       id, user_id: auth.user.userId, subject, unit_name: unitName, grade_level: gradeLevel,
-      questions: JSON.stringify(questions), answers: "[]", grading: "[]", created_at: createdAt, graded_at: null,
+      questions, answers: [], grading: [], created_at: createdAt, graded_at: null,
     };
     await insertPracticePaper({ id, userId: auth.user.userId, subject, unitName, gradeLevel, questions, createdAt });
     return Response.json({ paper: paperDetail(row) }, { status: 201, headers: noStore });

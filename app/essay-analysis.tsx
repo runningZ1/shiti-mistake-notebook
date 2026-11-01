@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, Camera, CheckCircle2, FileImage, Lightbulb, LoaderCircle, PenLine, Plus, Sparkles, X } from "lucide-react";
 import type { EssayDetail, EssayExtraction, EssayFeedback, EssaySummary } from "@/lib/essay-types";
 
@@ -45,6 +46,7 @@ function FeedbackCard({ number, title, item }: { number: string; title: string; 
 }
 
 export default function EssayAnalysis({ trialExpired, aiReady, onTrialExpired }: Props) {
+  const router = useRouter();
   const [photos, setPhotos] = useState<Photo[]>([]);
   const allUrls = useRef<string[]>([]);
   const chooseRef = useRef<HTMLInputElement>(null);
@@ -63,15 +65,14 @@ export default function EssayAnalysis({ trialExpired, aiReady, onTrialExpired }:
   useEffect(() => {
     let mounted = true;
     fetch("/api/essays").then(async response => {
-      // Full navigation drops any confirmed draft after the session expires.
-      if (response.status === 401) { window.location.href = "/login"; return null; }
+      if (response.status === 401) { router.replace("/login"); return null; }
       if (!response.ok) throw new Error("作文记录加载失败，请刷新页面重试");
       return response.json() as Promise<{ essays: EssaySummary[] }>;
     }).then(data => { if (mounted && data) setHistory(data.essays); })
       .catch(cause => { if (mounted) setError(cause instanceof Error ? cause.message : "作文记录加载失败"); })
       .finally(() => { if (mounted) setLoadingHistory(false); });
     return () => { mounted = false; allUrls.current.forEach(url => URL.revokeObjectURL(url)); };
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     if (!busy) return;
@@ -109,7 +110,7 @@ export default function EssayAnalysis({ trialExpired, aiReady, onTrialExpired }:
   }
 
   async function handleResponse(response: Response): Promise<Record<string, unknown> | null> {
-    if (response.status === 401) { window.location.href = "/login"; return null; }
+    if (response.status === 401) { router.replace("/login"); return null; }
     const data = await response.json() as Record<string, unknown>;
     if (data.code === "TRIAL_EXPIRED") onTrialExpired();
     if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : "操作失败，请重试");

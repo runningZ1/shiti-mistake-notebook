@@ -57,7 +57,6 @@ export async function POST(request: Request) {
     checkWechat(wechat, true);
   if (invalid) return fail(invalid, 400);
 
-  if (!env.DB) return fail("存储服务暂不可用", 503);
   if (!env.SESSION_SECRET) return fail("服务端未配置会话密钥，请联系管理员", 503);
 
   // 主键用随机值而不是用户名：它会成为 uploads.user_id / mistakes.user_id，

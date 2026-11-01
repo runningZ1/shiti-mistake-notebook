@@ -28,7 +28,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }));
     const gradedAt = new Date().toISOString();
     await savePracticeGrade(id, auth.user.userId, answers, grading, gradedAt);
-    return Response.json({ paper: paperDetail({ ...row, answers: JSON.stringify(answers), grading: JSON.stringify(grading), graded_at: gradedAt }) }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ paper: paperDetail({ ...row, answers, grading, graded_at: gradedAt }) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Practice grading failed", error);
     return Response.json({ error: error instanceof Error ? error.message : "批改失败，请重试" }, { status: 500 });

@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { authenticateForAi } from "@/lib/api-guard";
+import { query, transaction } from "@/db/client";
 import { aiConfigured, analyzePages } from "@/lib/ai";
 
 export const runtime = "edge";
@@ -17,7 +18,7 @@ export async function POST(request: Request) {
   const auth = await authenticateForAi();
   if ("response" in auth) return auth.response;
   const user = auth.user;
-  if (!env.DB || !env.BUCKET) return Response.json({ error: "存储服务暂不可用" }, { status: 503 });
+  if (!env.BUCKET) throw new Error("图片存储未配置");
 
   try {
     const form = await request.formData();
@@ -36,24 +37,32 @@ export async function POST(request: Request) {
     const uploadId = crypto.randomUUID();
     const createdAt = new Date().toISOString();
     const keys = files.map((_, i) => `${user.userId}/${uploadId}/${i}`);
-    const written: string[] = [];
+    const multipartUploads: R2MultipartUpload[] = [];
     try {
       for (let i = 0; i < files.length; i++) {
-        await env.BUCKET.put(keys[i], images[i].bytes, { httpMetadata: { contentType: files[i].type } });
-        written.push(keys[i]);
+        const multipart = await env.BUCKET.createMultipartUpload(keys[i], { httpMetadata: { contentType: files[i].type } });
+        multipartUploads.push(multipart);
+        // 先保存可终止的上传标识；进程中断或账号删除后仍能清理全部图片。
+        await query("INSERT INTO upload_objects (key, user_id, multipart_id) VALUES ($1, $2, $3)", [keys[i], user.userId, multipart.uploadId]);
+        const part = await multipart.uploadPart(1, images[i].bytes);
+        await multipart.complete([part]);
       }
-      const statements = [env.DB.prepare("INSERT INTO uploads (id, user_id, subject, file_keys, file_names, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-        .bind(uploadId, user.userId, analysis.subject.trim() || "其他", JSON.stringify(keys), JSON.stringify(files.map(file => file.name)), createdAt)];
-      const saved = analysis.mistakes.map(item => {
-        const id = crypto.randomUUID();
-        statements.push(env.DB!.prepare("INSERT INTO mistakes (id, upload_id, user_id, subject, question, incorrect_answer, correct_answer, reasoning, knowledge_point, page_number, source_name, similar_questions, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-          .bind(id, uploadId, user.userId, analysis.subject.trim() || "其他", item.question.trim(), item.incorrectAnswer.trim(), item.correctAnswer.trim(), item.reasoning.trim(), item.knowledgePoint.trim(), Math.max(1, Math.min(files.length, item.pageNumber || 1)), files[Math.max(0, Math.min(files.length - 1, (item.pageNumber || 1) - 1))].name, "[]", createdAt));
-        return { id, ...item, subject: analysis.subject.trim() || "其他", sourceName: files[Math.max(0, Math.min(files.length - 1, (item.pageNumber || 1) - 1))].name, createdAt, similarQuestions: [] };
+      const saved = analysis.mistakes.map(item => ({
+        ...item, id: crypto.randomUUID(), subject: analysis.subject.trim() || "其他",
+        sourceName: files[Math.max(0, Math.min(files.length - 1, (item.pageNumber || 1) - 1))].name,
+        createdAt, similarQuestions: [],
+      }));
+      await transaction(async client => {
+        await client.query("INSERT INTO uploads (id,user_id,subject,file_keys,file_names,created_at) VALUES ($1,$2,$3,$4,$5,$6)", [uploadId,user.userId,analysis.subject.trim() || "其他",JSON.stringify(keys),JSON.stringify(files.map(file => file.name)),createdAt]);
+        for (const item of saved) {
+          await client.query("INSERT INTO mistakes (id,upload_id,user_id,subject,question,incorrect_answer,correct_answer,reasoning,knowledge_point,page_number,source_name,similar_questions,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)", [item.id,uploadId,user.userId,item.subject,item.question.trim(),item.incorrectAnswer.trim(),item.correctAnswer.trim(),item.reasoning.trim(),item.knowledgePoint.trim(),Math.max(1,Math.min(files.length,item.pageNumber || 1)),item.sourceName,"[]",createdAt]);
+        }
       });
-      await env.DB.batch(statements);
       return Response.json({ uploadId, subject: analysis.subject, summary: analysis.summary, uncertainNote: analysis.uncertainNote, gradingMode: analysis.gradingMode, grading: analysis.grading, mistakes: saved });
     } catch (error) {
-      await Promise.allSettled(written.map(key => env.BUCKET!.delete(key)));
+      for (const multipart of multipartUploads) await multipart.abort();
+      await env.BUCKET.delete(keys);
+      // 保留 upload_objects，删除失败或请求中断后仍可由账号删除流程重试。
       throw error;
     }
   } catch (error) {

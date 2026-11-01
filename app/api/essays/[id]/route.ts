@@ -1,4 +1,3 @@
-import { env } from "cloudflare:workers";
 import { authenticate } from "@/lib/api-guard";
 import { getEssayReport } from "@/lib/essay-reports";
 
@@ -7,7 +6,6 @@ export const runtime = "edge";
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authenticate();
   if ("response" in auth) return auth.response;
-  if (!env.DB) return Response.json({ error: "存储服务暂不可用" }, { status: 503 });
   const { id } = await params;
   if (!id || id.length > 100) return Response.json({ error: "作文记录不存在" }, { status: 404 });
   try {

@@ -1,6 +1,6 @@
 declare namespace Cloudflare {
   interface Env {
-    DB?: D1Database;
+    DATABASE_URL?: string;
     BUCKET?: R2Bucket;
     DEEPSEEK_API_KEY?: string;
     /** 会话 cookie 的 HMAC 签名密钥，至少 32 字符。缺失会让登录接口 500。 */

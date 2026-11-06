@@ -45,6 +45,7 @@ type User = {
   lastLoginAt: string | null;
   wechat: string | null;
   trialEndsAt: string | null;
+  paidEndsAt: string | null;
   deletionStartedAt: string | null;
 };
 type Page = {
@@ -277,6 +278,7 @@ export default function AdminConsole({
         </nav>
         <footer>
           <span>管理员 · {currentUserName}</span>
+          <Link href="/admin/payment-test">支付宝支付测试</Link>
           <Link href="/">
             <ArrowLeft size={16} />
             返回错题本
@@ -422,7 +424,7 @@ function UserManager({ self, navigate }: { self: string; navigate: Navigate }) {
         .includes(search.toLowerCase()) &&
       (!role || u.role === role) &&
       (!status || u.status === status) &&
-      (!access || (access === "unlimited" ? u.trialEndsAt === null : access === "expired" ? u.trialEndsAt !== null && Date.parse(u.trialEndsAt) <= now : u.trialEndsAt !== null && Date.parse(u.trialEndsAt) > now)),
+      (!access || (access === "unlimited" ? u.trialEndsAt === null : access === "expired" ? u.trialEndsAt !== null && Math.max(Date.parse(u.trialEndsAt), u.paidEndsAt ? Date.parse(u.paidEndsAt) : 0) <= now : u.trialEndsAt !== null && Math.max(Date.parse(u.trialEndsAt), u.paidEndsAt ? Date.parse(u.paidEndsAt) : 0) > now)),
   ).sort((a, b) => sort === "mistakes" ? b.mistakeCount - a.mistakeCount : sort === "login" ? Date.parse(b.lastLoginAt || "1970-01-01") - Date.parse(a.lastLoginAt || "1970-01-01") : Date.parse(b.createdAt) - Date.parse(a.createdAt));
   const totalPages = Math.max(1, Math.ceil(list.length / 20));
   const shownPage = Math.min(page, totalPages);
@@ -548,7 +550,7 @@ function UserManager({ self, navigate }: { self: string; navigate: Navigate }) {
                         {u.deletionStartedAt ? "删除中，等待清理" : u.status === "active" ? "已启用" : "已停用"}
                       </Badge>
                     </td>
-                    <td>{u.trialEndsAt === null ? "长期可用" : Date.parse(u.trialEndsAt) <= now ? "试用已到期" : `试用至 ${date(u.trialEndsAt)}`}</td>
+                    <td>{u.trialEndsAt === null ? "长期可用" : Math.max(Date.parse(u.trialEndsAt), u.paidEndsAt ? Date.parse(u.paidEndsAt) : 0) <= now ? "权限已到期" : u.paidEndsAt && Date.parse(u.paidEndsAt) > now ? `会员至 ${date(u.paidEndsAt)}` : `试用至 ${date(u.trialEndsAt)}`}</td>
                     <td><button className="ac-text-button" onClick={() => navigate("mistakes", { userId: u.id, uploadId: "", subject: "" })}>{u.mistakeCount} 道错题</button><small>注册于 {date(u.createdAt)}</small></td>
                     <td>{date(u.lastLoginAt)}</td>
                     <td>

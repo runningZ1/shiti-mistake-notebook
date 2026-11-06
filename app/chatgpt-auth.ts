@@ -12,6 +12,7 @@ export type ChatGPTUser = {
   /** 来自库里那一行，不是 cookie —— cookie 只证明「是你」，不证明「你现在还是管理员」。 */
   role: UserRole;
   trialEndsAt: string | null;
+  paidEndsAt: string | null;
 };
 
 const USER_ID_HEADER = "oai-authenticated-user-id";
@@ -66,6 +67,7 @@ export async function getSessionUser(): Promise<ChatGPTUser | null> {
     fullName: record.displayName,
     role: record.role,
     trialEndsAt: record.trialEndsAt,
+    paidEndsAt: record.paidEndsAt,
   };
 }
 
@@ -97,6 +99,7 @@ export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
     fullName,
     role: "user",
     trialEndsAt: null,
+    paidEndsAt: null,
   };
 }
 

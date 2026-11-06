@@ -37,6 +37,7 @@ yarn-error.log*
 # 播种账号（明文登录密码），只被 deploy.sh 读。故意不叫 .dev.vars.<name>，
 # 免得被 wrangler 当成「<name> 环境的变量文件」加载进 worker。
 .deploy.vars
+/PAYMENT_SHARED_SECRET.txt
 
 # vercel
 .vercel

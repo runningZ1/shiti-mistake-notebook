@@ -2,6 +2,8 @@
 
 两组初始账号凭据保存在项目根目录的 `.deploy.vars`，该文件已被 Git 忽略。密码不写入文档或前端代码。
 
+2026-11-06 已按用户要求将两组现有凭据另存为项目根目录 `.env.accounts`，便于直接查找 ENV 文件；写入时已核对本地数据库密码哈希一致，未重置密码。管理员查看 `SHITI_BOOTSTRAP_USER` / `SHITI_BOOTSTRAP_PASSWORD`，普通用户查看 `SHITI_DEFAULT_USER` / `SHITI_DEFAULT_PASSWORD`。此文件为本地凭据备查副本，也已被 Git 忽略，不由前端加载。初始化脚本继续读取 `.deploy.vars`；以后在后台重置这两组密码时，应同步更新这两个文件。ENV 里的值不会自动改变数据库登录密码。
+
 | 用途 | 用户名变量 | 密码变量 | 入口 |
 |---|---|---|---|
 | 管理员 | SHITI_BOOTSTRAP_USER | SHITI_BOOTSTRAP_PASSWORD | /login 登录，随后 /admin |

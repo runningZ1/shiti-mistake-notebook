@@ -15,6 +15,7 @@ export type UserRecord = {
   createdAt: string;
   lastLoginAt: string | null;
   trialEndsAt: string | null;
+  paidEndsAt: string | null;
 };
 type UserRow = {
   id: string;
@@ -27,10 +28,11 @@ type UserRow = {
   created_at: string;
   last_login_at: string | null;
   trial_ends_at: string | null;
+  paid_ends_at: string | null;
   deletion_started_at: string | null;
 };
 
-const COLUMNS = "id, username, password_hash, display_name, role, status, session_epoch, created_at, last_login_at, trial_ends_at, deletion_started_at";
+const COLUMNS = "id, username, password_hash, display_name, role, status, session_epoch, created_at, last_login_at, trial_ends_at, paid_ends_at, deletion_started_at";
 
 function toRecord(row: UserRow): UserRecord {
   return {
@@ -40,7 +42,7 @@ function toRecord(row: UserRow): UserRecord {
     sessionEpoch: row.session_epoch,
     createdAt: row.created_at,
     lastLoginAt: row.last_login_at,
-    trialEndsAt: row.trial_ends_at,
+    trialEndsAt: row.trial_ends_at, paidEndsAt: row.paid_ends_at,
   };
 }
 
@@ -55,7 +57,8 @@ export async function findUserByUsername(username: string): Promise<UserRecord |
 export type AdminUserRow = {
   id: string; username: string; displayName: string; role: UserRole; status: UserStatus;
   createdAt: string; lastLoginAt: string | null; wechat: string | null;
-  trialEndsAt: string | null; deletionStartedAt: string | null; mistakeCount: number;
+  trialEndsAt: string | null;
+  paidEndsAt: string | null; deletionStartedAt: string | null; mistakeCount: number;
 };
 export async function listUsersWithCounts(): Promise<AdminUserRow[]> {
   const { rows } = await query<UserRow & { wechat: string | null; mistake_count: string }>(
@@ -66,7 +69,7 @@ export async function listUsersWithCounts(): Promise<AdminUserRow[]> {
     role: row.role === "admin" ? "admin" : "user",
     status: row.status === "active" && row.deletion_started_at === null ? "active" : "disabled",
     createdAt: row.created_at, lastLoginAt: row.last_login_at,
-    wechat: row.wechat || null, trialEndsAt: row.trial_ends_at,
+    wechat: row.wechat || null, trialEndsAt: row.trial_ends_at, paidEndsAt: row.paid_ends_at,
     deletionStartedAt: row.deletion_started_at, mistakeCount: Number(row.mistake_count),
   }));
 }

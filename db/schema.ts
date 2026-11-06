@@ -15,6 +15,7 @@ export const users = pgTable("users", {
   lastLoginAt: time("last_login_at"),
   wechat: text("wechat"),
   trialEndsAt: time("trial_ends_at"),
+  paidEndsAt: time("paid_ends_at"),
   deletionStartedAt: time("deletion_started_at"),
 }, table => [
   check("users_role_check", sql`${table.role} IN ('user', 'admin')`),
@@ -99,3 +100,52 @@ export const essayReports = pgTable("essay_reports", {
   reportJson: jsonb("report_json").notNull(),
   createdAt: time("created_at").notNull().defaultNow(),
 }, table => [index("essay_reports_user_created_idx").on(table.userId, table.createdAt, table.id)]);
+
+export const paymentOrders = pgTable("payment_orders", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+  productId: text("product_id").notNull(),
+  productName: text("product_name").notNull(),
+  purpose: text("purpose").notNull().default("MEMBERSHIP"),
+  amountCents: integer("amount_cents").notNull(),
+  durationDays: integer("duration_days").notNull(),
+  currency: text("currency").notNull().default("CNY"),
+  source: text("source").notNull(),
+  localOrderId: text("local_order_id").unique(),
+  status: text("status").notNull().default("PENDING"),
+  deliveryStatus: text("delivery_status").notNull().default("PENDING"),
+  createdAt: time("created_at").notNull().defaultNow(),
+  paidAt: time("paid_at"),
+  gatewayRequestedAt: time("gateway_requested_at"),
+  requestLeaseUntil: time("request_lease_until"),
+}, table => [
+  check("payment_orders_id_check", sql`${table.id} ~ '^ST_[a-f0-9]{32}$'`),
+  check("payment_orders_amount_cents_check", sql`${table.amountCents} > 0`),
+  check("payment_orders_duration_days_check", sql`(${table.purpose} = 'TEST' AND ${table.durationDays} = 0) OR (${table.purpose} = 'MEMBERSHIP' AND ${table.durationDays} > 0)`),
+  check("payment_orders_purpose_check", sql`${table.purpose} IN ('MEMBERSHIP','TEST')`),
+  check("payment_orders_test_amount_check", sql`${table.purpose} <> 'TEST' OR ${table.amountCents} BETWEEN 1 AND 10000`),
+  check("payment_orders_currency_check", sql`${table.currency} = 'CNY'`),
+  check("payment_orders_status_check", sql`${table.status} IN ('PENDING','PAID')`),
+  check("payment_orders_delivery_status_check", sql`${table.deliveryStatus} IN ('PENDING','DELIVERED','REVIEW')`),
+  check("payment_orders_paid_check", sql`(${table.status} = 'PAID') = (${table.paidAt} IS NOT NULL)`),
+  check("payment_orders_delivery_check", sql`${table.deliveryStatus} = 'PENDING' OR ${table.status} = 'PAID'`),
+  index("payment_orders_user_created_idx").on(table.userId, table.createdAt.desc()),
+  uniqueIndex("payment_orders_pending_user_idx").on(table.userId, table.source, table.purpose, table.amountCents).where(sql`${table.status} = 'PENDING'`),
+]);
+
+export const paymentEvents = pgTable("payment_events", {
+  orderId: text("order_id").notNull().references(() => paymentOrders.id),
+  localOrderId: text("local_order_id").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  receivedAt: time("received_at").notNull().defaultNow(),
+  processedAt: time("processed_at"),
+}, table => [
+  primaryKey({ columns: [table.orderId, table.localOrderId] }),
+  check("payment_events_amount_cents_check", sql`${table.amountCents} > 0`),
+]);
+
+export const paymentDeliveries = pgTable("payment_deliveries", {
+  orderId: text("order_id").primaryKey().references(() => paymentOrders.id),
+  paidEndsAt: time("paid_ends_at").notNull(),
+  createdAt: time("created_at").notNull().defaultNow(),
+});

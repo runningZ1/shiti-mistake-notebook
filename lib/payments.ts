@@ -106,7 +106,7 @@ export async function payOrder(id: string, userId: string) {
       timestamp: Date.now(), returnUrl: config.returnUrl, productName: order.product_name, userId };
     const signature = await signPayment(body.externalOrderId + body.amount + body.source + body.timestamp, config.secret);
     const response = await fetch(config.gatewayUrl, { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...body, signature }), signal: AbortSignal.timeout(15000), redirect: "error" });
+      body: JSON.stringify({ ...body, signature }), signal: AbortSignal.timeout(15000), redirect: "manual" });
     if (!response.ok) throw new PaymentError("暂时无法生成付款入口，请重试同一订单", 502);
     const result = await response.json() as Record<string, unknown>;
     if (result.success !== true || typeof result.localOrderId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(result.localOrderId)) {

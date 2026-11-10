@@ -48,14 +48,14 @@ export async function POST(request: Request) {
         await multipart.complete([part]);
       }
       const saved = analysis.mistakes.map(item => ({
-        ...item, id: crypto.randomUUID(), subject: analysis.subject.trim() || "其他",
+        ...item, id: crypto.randomUUID(), uploadId, subject: analysis.subject.trim() || "其他",
         sourceName: files[Math.max(0, Math.min(files.length - 1, (item.pageNumber || 1) - 1))].name,
         createdAt, similarQuestions: [],
       }));
       await transaction(async client => {
         await client.query("INSERT INTO uploads (id,user_id,subject,file_keys,file_names,created_at) VALUES ($1,$2,$3,$4,$5,$6)", [uploadId,user.userId,analysis.subject.trim() || "其他",JSON.stringify(keys),JSON.stringify(files.map(file => file.name)),createdAt]);
         for (const item of saved) {
-          await client.query("INSERT INTO mistakes (id,upload_id,user_id,subject,question,incorrect_answer,correct_answer,reasoning,knowledge_point,page_number,source_name,similar_questions,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)", [item.id,uploadId,user.userId,item.subject,item.question.trim(),item.incorrectAnswer.trim(),item.correctAnswer.trim(),item.reasoning.trim(),item.knowledgePoint.trim(),Math.max(1,Math.min(files.length,item.pageNumber || 1)),item.sourceName,"[]",createdAt]);
+          await client.query("INSERT INTO mistakes (id,upload_id,user_id,subject,question,question_bounds,incorrect_answer,correct_answer,reasoning,knowledge_point,page_number,source_name,similar_questions,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)", [item.id,uploadId,user.userId,item.subject,item.question.trim(),JSON.stringify(item.questionBounds),item.incorrectAnswer.trim(),item.correctAnswer.trim(),item.reasoning.trim(),item.knowledgePoint.trim(),Math.max(1,Math.min(files.length,item.pageNumber || 1)),item.sourceName,"[]",createdAt]);
         }
       });
       return Response.json({ uploadId, subject: analysis.subject, summary: analysis.summary, uncertainNote: analysis.uncertainNote, gradingMode: analysis.gradingMode, grading: analysis.grading, mistakes: saved });

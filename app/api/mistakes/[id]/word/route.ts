@@ -1,10 +1,13 @@
 import { query } from "@/db/client";
 import { authenticate } from "@/lib/api-guard";
 import { makeMistakeDocx, mistakeDocxFilename } from "@/lib/mistake-docx";
+import { isVisualQuestion, loadWordSourceImage, needsOriginalPicture } from "@/lib/word-source";
 
 type MistakeRow = {
+  upload_id: string;
   subject: string;
   question: string;
+  question_bounds: number[];
   incorrect_answer: string;
   correct_answer: string;
   reasoning: string;
@@ -23,7 +26,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
   try {
     const { rows } = await query<MistakeRow>(
-      "SELECT subject, question, incorrect_answer, correct_answer, reasoning, knowledge_point, page_number, source_name, created_at, similar_questions FROM mistakes WHERE id = $1 AND user_id = $2",
+      "SELECT upload_id, subject, question, question_bounds, incorrect_answer, correct_answer, reasoning, knowledge_point, page_number, source_name, created_at, similar_questions FROM mistakes WHERE id = $1 AND user_id = $2",
       [(await params).id, auth.user.userId]);
     const row = rows[0];
     if (!row) return Response.json({ error: "错题不存在" }, { status: 404 });
@@ -31,6 +34,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const item = {
       subject: row.subject,
       question: row.question,
+      questionBounds: row.question_bounds,
       incorrectAnswer: row.incorrect_answer,
       correctAnswer: row.correct_answer,
       reasoning: row.reasoning,
@@ -39,6 +43,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       sourceName: row.source_name,
       createdAt: row.created_at,
       similarQuestions: row.similar_questions,
+      visualQuestion: isVisualQuestion(row.question),
+      ...(needsOriginalPicture(row.subject, row.question) ? { sourceImage: await loadWordSourceImage(auth.user.userId, row.upload_id, row.page_number) } : {}),
     };
     const bytes = makeMistakeDocx(item);
     const name = mistakeDocxFilename(item);

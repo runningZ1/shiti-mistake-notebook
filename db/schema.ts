@@ -52,6 +52,8 @@ export const mistakes = pgTable("mistakes", {
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   subject: text("subject").notNull(),
   question: text("question").notNull(),
+  // 题目在原图上的区域，千分比坐标 [left, top, right, bottom]；旧数据留空。
+  questionBounds: jsonb("question_bounds").notNull().default([]),
   incorrectAnswer: text("incorrect_answer").notNull(),
   correctAnswer: text("correct_answer").notNull(),
   reasoning: text("reasoning").notNull(),
@@ -67,6 +69,7 @@ export const mistakes = pgTable("mistakes", {
   index("mistakes_subject_created_idx").on(table.subject, table.createdAt, table.id),
   check("mistakes_page_number_check", sql`${table.pageNumber} > 0`),
   check("mistakes_similar_array", sql`jsonb_typeof(${table.similarQuestions}) = 'array'`),
+  check("mistakes_bounds_array", sql`jsonb_typeof(${table.questionBounds}) = 'array'`),
 ]);
 
 export const practicePapers = pgTable("practice_papers", {

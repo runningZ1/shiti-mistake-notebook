@@ -1,10 +1,12 @@
-﻿# 拾题 · 智能错题本
+# 拾题 · 智能错题本
 
 ## 产品与运行方式
 
 拍照上传作业或试卷，调用 DeepSeek 分析并归档错题；支持类似题、知识图谱、单元练习卷、英语作文分析和账号管理后台。
 
 应用使用 vinext、Vite、React、TypeScript，服务端在 Workers 运行环境中执行，自托管服务器使用 Wrangler、PM2 和 nginx。数据库使用真实 PostgreSQL，通过 `pg` 驱动执行参数化 SQL；Drizzle 的 PostgreSQL schema 在 `db/schema.ts`。图片保存在 R2 接口提供的对象存储，自托管时其持久目录为 `.wrangler/state`。
+
+错题本与分析结果支持勾选多题合并下载 Word；批量举一反三每次最多 10 道错题、每道 1–5 道新题，并逐题显示进度。上传照片后定位到预览和分析按钮。数学计算和图表题导出保留原题图片；JPG/PNG 支持服务器直接下载，WEBP 或超过 30 题使用浏览器转换，浏览器能定位题目区域时优先裁剪。Word 使用紧凑 A4 留白，答案集中置于题目后。单元练习支持 1–30 题及选择、填空、图表、解答混合题型。
 
 禁止 mock、伪造业务数据和数据库替代实现。验证使用真实账号、真实作业和真实数据库；破坏性验证只在独立数据库或 schema 的真实资料副本上运行。
 
@@ -32,7 +34,9 @@ node --env-file=.env.postgres scripts/import-postgres.mjs <原SQLite数据库路
 - `query` 在结束时关闭连接池；`transaction` 使用同一客户端执行 BEGIN/COMMIT，失败时回滚事务并抛出错误。禁止把数据库错误当作空结果。
 - `timestamptz` 读取为 ISO 字符串，JSON 字段使用 `jsonb`。账号 ID 保持 text，迁移不得重写 ID、密码哈希或图片键。
 - `db/migrations/*.sql` 为正式迁移，`scripts/migrate-postgres.mjs` 使用校验和记录已执行迁移，修改结构请追加文件，禁止修改已执行迁移。
-- `drizzle/` 是原 SQLite 数据迁移来源，应用运行和新部署不使用 D1。
+- `drizzle/` 根目录与 `drizzle/meta/` 是原 SQLite 数据迁移来源，应用运行和新部署不使用 D1。
+- 原题区域 `mistakes.question_bounds` 使用 jsonb 数组，旧记录默认 `[]`。上线切换代码前执行正式迁移 `db/migrations/0004_question_bounds.sql`；本次合并不执行迁移或部署。
+- PostgreSQL 生成快照与 journal 位于 `drizzle/postgresql/meta/`，`0003_snapshot.json` 是现有 PostgreSQL schema 的基线；历史 SQLite meta 保持独立。后续使用 `npm run db:generate -- --out ./drizzle/postgresql` 生成差异，并将新 SQL 按正式序号追加到 `db/migrations/`，由既有校验和执行器应用。
 - `scripts/import-postgres.mjs` 使用 Node SQLite 库只读源文件，事务导入 PostgreSQL，遇到重复记录或违反外键、检查约束时直接失败。导入事务内暂时禁用业务状态触发器，以保留停用账号的历史资料，提交前恢复触发器。迁移重复执行与真实账号导入已经在独立 schema 验证。
 - 用户数据、迁移来源数据库和对象存储目录禁止提交。
 

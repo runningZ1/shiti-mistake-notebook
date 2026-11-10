@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { query } from "@/db/client";
 import type { WorksheetMistake } from "./mistake-docx";
 
 export function isVisualQuestion(question: string): boolean {
@@ -34,11 +35,12 @@ function imageDimensions(bytes: Uint8Array, mime: "image/jpeg" | "image/png"): {
 
 /** Existing uploads retain whole-page images; include them rather than silently losing diagrams. */
 export async function loadWordSourceImage(userId: string, uploadId: string, pageNumber: number): Promise<NonNullable<WorksheetMistake["sourceImage"]>> {
-  if (!env.DB || !env.BUCKET) throw new Error("原图存储暂不可用");
-  const upload = await env.DB.prepare("SELECT file_keys FROM uploads WHERE id = ? AND user_id = ?")
-    .bind(uploadId, userId).first<{ file_keys: string }>();
+  if (!env.BUCKET) throw new Error("原图存储暂不可用");
+  const { rows } = await query<{ file_keys: string[] }>(
+    "SELECT file_keys FROM uploads WHERE id = $1 AND user_id = $2", [uploadId, userId]);
+  const upload = rows[0];
   if (!upload) throw new Error("原题图片已不存在，无法导出完整试卷");
-  const keys: unknown = JSON.parse(upload.file_keys);
+  const keys = upload.file_keys;
   const key = Array.isArray(keys) ? keys[pageNumber - 1] : undefined;
   if (typeof key !== "string" || !key.startsWith(`${userId}/${uploadId}/`)) throw new Error("原题图片已不存在，无法导出完整试卷");
   const source = await env.BUCKET.get(key);

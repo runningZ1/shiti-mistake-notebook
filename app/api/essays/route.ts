@@ -1,4 +1,3 @@
-import { env } from "cloudflare:workers";
 import { authenticate, authenticateForAi } from "@/lib/api-guard";
 import { aiConfigured, analyzeEssay } from "@/lib/ai";
 import { isSameOriginRequest } from "@/lib/auth";
@@ -12,7 +11,6 @@ const noStore = { "Cache-Control": "private, no-store" };
 export async function GET() {
   const auth = await authenticate();
   if ("response" in auth) return auth.response;
-  if (!env.DB) return Response.json({ error: "存储服务暂不可用" }, { status: 503 });
   try {
     return Response.json({ essays: await listEssayReports(auth.user.userId) }, { headers: noStore });
   } catch (error) {
@@ -26,7 +24,6 @@ export async function POST(request: Request) {
   const auth = await authenticateForAi();
   if ("response" in auth) return auth.response;
   if (!aiConfigured()) return Response.json({ error: "AI 服务尚未配置" }, { status: 503 });
-  if (!env.DB) return Response.json({ error: "存储服务暂不可用" }, { status: 503 });
 
   try {
     const form = await request.formData();

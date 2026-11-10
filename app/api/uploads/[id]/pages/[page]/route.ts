@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { query } from "@/db/client";
 import { authenticate } from "@/lib/api-guard";
 
 export const runtime = "edge";
@@ -7,15 +8,16 @@ export const runtime = "edge";
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string; page: string }> }) {
   const auth = await authenticate();
   if ("response" in auth) return auth.response;
-  if (!env.DB || !env.BUCKET) return Response.json({ error: "图片存储暂不可用" }, { status: 503 });
+  if (!env.BUCKET) return Response.json({ error: "图片存储暂不可用" }, { status: 503 });
   const { id, page } = await params;
   const pageNumber = Number(page);
   if (!Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > 4) return Response.json({ error: "页码无效" }, { status: 400 });
   try {
-    const upload = await env.DB.prepare("SELECT file_keys FROM uploads WHERE id = ? AND user_id = ?")
-      .bind(id, auth.user.userId).first<{ file_keys: string }>();
+    const { rows } = await query<{ file_keys: string[] }>(
+      "SELECT file_keys FROM uploads WHERE id = $1 AND user_id = $2", [id, auth.user.userId]);
+    const upload = rows[0];
     if (!upload) return Response.json({ error: "原图不存在" }, { status: 404 });
-    const keys: unknown = JSON.parse(upload.file_keys);
+    const keys = upload.file_keys;
     const key = Array.isArray(keys) ? keys[pageNumber - 1] : undefined;
     if (typeof key !== "string" || !key.startsWith(`${auth.user.userId}/${id}/`)) return Response.json({ error: "原图不存在" }, { status: 404 });
     const file = await env.BUCKET.get(key);

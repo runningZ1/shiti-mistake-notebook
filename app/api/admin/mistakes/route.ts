@@ -22,6 +22,7 @@ export async function GET(request: Request) {
       search,
       subject,
       userId,
+      uploadId: url.searchParams.get("uploadId") || "",
     });
     return Response.json(data, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

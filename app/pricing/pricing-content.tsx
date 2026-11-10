@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -8,17 +7,15 @@ import {
   BookOpen,
   Check,
   CheckCircle2,
-  Copy,
   Crown,
   HelpCircle,
   Lightbulb,
-  QrCode,
   ShieldCheck,
   Sparkles,
   X,
 } from "lucide-react";
 import type { ChatGPTUser } from "../chatgpt-auth";
-import { isTrialExpired } from "@/lib/trial";
+import { isTrialExpired, isAccessExpired } from "@/lib/trial";
 
 type PricingProps = {
   user: ChatGPTUser | null;
@@ -26,48 +23,11 @@ type PricingProps = {
 
 export default function PricingContent({ user }: PricingProps) {
   const router = useRouter();
-  const [showModal, setShowModal] = useState(false);
-  const [payTab, setPayTab] = useState<"qrcode" | "wechat">("qrcode");
-  const [copied, setCopied] = useState(false);
-  const [paymentAccount, setPaymentAccount] = useState("");
-  const [paymentTxId, setPaymentTxId] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-
-  // 会员状态判定
-  const isVIP = user ? user.role === "admin" || user.trialEndsAt === null : false;
-  const isTrial = user ? !isVIP && !isTrialExpired(user.trialEndsAt) : false;
-  const isExpired = user ? !isVIP && isTrialExpired(user.trialEndsAt) : false;
-
-  const wechatServiceId = "shiti_assistant";
-
-  function handleCopyWechat() {
-    navigator.clipboard.writeText(wechatServiceId).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    });
-  }
-
-  async function handleApplySubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSubmitting(true);
-    try {
-      await fetch("/api/pricing/apply", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          account: paymentAccount,
-          txId: paymentTxId,
-          userId: user?.userId,
-          username: user?.displayName,
-        }),
-      }).catch(() => null);
-      setSubmitted(true);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
+  const isLongTerm = user ? user.role === "admin" || user.trialEndsAt === null : false;
+  const isPaid = user ? !!user.paidEndsAt && !isTrialExpired(user.paidEndsAt) : false;
+  const isVIP = isLongTerm || isPaid;
+  const isTrial = user ? !isVIP && !isAccessExpired(user.trialEndsAt, user.paidEndsAt) : false;
+  const isExpired = user ? !isVIP && isAccessExpired(user.trialEndsAt, user.paidEndsAt) : false;
   return (
     <div className="pricing-page">
       {/* 头部导航 */}
@@ -136,7 +96,7 @@ export default function PricingContent({ user }: PricingProps) {
               {isVIP && (
                 <div className="pricing-status-banner vip" role="status">
                   <CheckCircle2 size={18} />
-                  <span>您当前已是尊贵 VIP 畅学会员，享有全站所有高级功能无限制使用权！</span>
+                  <span>{isLongTerm ? "您当前拥有长期使用权限。" : `您的 VIP 会员有效期至 ${new Date(user!.paidEndsAt!).toLocaleString("zh-CN")}，可前往收银页续费。`}</span>
                 </div>
               )}
               {isTrial && (
@@ -149,7 +109,7 @@ export default function PricingContent({ user }: PricingProps) {
                       month: "long",
                       day: "numeric",
                     })}
-                    ）。升级 VIP 可提前解锁无限期畅学！
+                    ）。购买月卡可增加 30 天使用权限。
                   </span>
                 </div>
               )}
@@ -250,7 +210,7 @@ export default function PricingContent({ user }: PricingProps) {
                   <button
                     type="button"
                     className="pricing-cta-button"
-                    onClick={() => setShowModal(true)}
+                    onClick={() => router.push("/payment")}
                   >
                     体验已到期 · 升级 VIP
                   </button>
@@ -279,7 +239,7 @@ export default function PricingContent({ user }: PricingProps) {
               <div className="pricing-price-wrap">
                 <span className="pricing-currency">¥</span>
                 <span className="pricing-amount">99</span>
-                <span className="pricing-interval">/ 月</span>
+                <span className="pricing-interval">/ 30天</span>
               </div>
               <span className="pricing-subtag">折合每日仅需 ¥3.3 · 不到一杯奶茶钱</span>
             </div>
@@ -354,7 +314,7 @@ export default function PricingContent({ user }: PricingProps) {
               </ul>
 
               <div className="pricing-cta-wrap">
-                {isVIP ? (
+                {isLongTerm ? (
                   <button type="button" className="pricing-cta-button primary" disabled>
                     <CheckCircle2 size={16} /> 尊贵 VIP 会员特权生效中
                   </button>
@@ -362,9 +322,9 @@ export default function PricingContent({ user }: PricingProps) {
                   <button
                     type="button"
                     className="pricing-cta-button primary"
-                    onClick={() => setShowModal(true)}
+                    onClick={() => router.push("/payment")}
                   >
-                    <Crown size={16} /> 立即开通 VIP 会员 · 99元/月
+                    <Crown size={16} /> {isPaid ? "续费 VIP" : "开通 VIP"} · 99元／30天
                   </button>
                 )}
               </div>
@@ -555,8 +515,8 @@ export default function PricingContent({ user }: PricingProps) {
                 <HelpCircle size={18} /> 付款后多长时间可以开通 VIP 权限？
               </h3>
               <p>
-                通过微信扫码支付或添加客服微信后，通常在 <strong>5 ~ 10 分钟内</strong>
-                核对完成并自动激活您的 VIP 账号权限。开通完成后直接刷新本站即可畅享所有功能，无需复杂配置。
+                支付宝付款后，系统收到并核对支付通知后自动开通。结果页会持续查询确认；
+                如仍显示待确认，请保留订单号并稍后在收银页查看，勿重复新建订单付款。目前建议使用电脑浏览器付款，手机唤起尚未完成联调。
               </p>
             </div>
 
@@ -609,14 +569,10 @@ export default function PricingContent({ user }: PricingProps) {
               type="button"
               className="pricing-guarantee-btn"
               onClick={() => {
-                if (isVIP) {
-                  router.push("/");
-                } else {
-                  setShowModal(true);
-                }
+                router.push(isLongTerm ? "/" : "/payment");
               }}
             >
-              {isVIP ? "进入学习空间" : "立即开通 VIP 会员 (¥99/月)"} <ArrowRight size={16} />
+              {isLongTerm ? "进入学习空间" : isPaid ? "续费 VIP 会员" : "开通 VIP 会员 (¥99／30天)"} <ArrowRight size={16} />
             </button>
           ) : (
             <Link href="/register" className="pricing-guarantee-btn">
@@ -626,178 +582,7 @@ export default function PricingContent({ user }: PricingProps) {
         </section>
       </main>
 
-      {/* 开通 VIP 会员弹窗 Modal */}
-      {showModal && (
-        <div
-          className="pricing-modal-backdrop"
-          onClick={e => {
-            if (e.target === e.currentTarget) setShowModal(false);
-          }}
-        >
-          <div className="pricing-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-            <button
-              type="button"
-              className="pricing-modal-close"
-              onClick={() => setShowModal(false)}
-              aria-label="关闭弹窗"
-            >
-              <X size={18} />
-            </button>
 
-            <div className="pricing-modal-head">
-              <span className="pricing-modal-badge">
-                <Crown size={14} /> VIP 会员开通通道
-              </span>
-              <h2 id="modal-title">开通 VIP 畅学会员</h2>
-              <p>无限次智能批改 · 举一反三变式练习 · 知识图谱 · Word 导出</p>
-            </div>
-
-            {!user ? (
-              /* 未登录提示 */
-              <div style={{ textAlign: "center", padding: "20px 0" }}>
-                <p style={{ fontSize: "14px", color: "#605a72", lineHeight: 1.8, marginBottom: "20px" }}>
-                  开通 VIP 权益将直接绑定到您的个人账号。请先登录或注册账号：
-                </p>
-                <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
-                  <Link
-                    href="/login"
-                    className="pricing-cta-button"
-                    style={{ padding: "0 24px", width: "auto" }}
-                  >
-                    已有账号去登录
-                  </Link>
-                  <Link
-                    href="/register"
-                    className="pricing-cta-button primary"
-                    style={{ padding: "0 24px", width: "auto" }}
-                  >
-                    免费注册（立赠7天试用）
-                  </Link>
-                </div>
-              </div>
-            ) : (
-              /* 已登录用户开通流程 */
-              <>
-                <div className="pricing-modal-amount">
-                  <div>
-                    <strong>充值账户：{user.displayName}</strong>
-                    <div style={{ fontSize: "11px", color: "#8a8499", marginTop: "3px" }}>
-                      开通档位：VIP 畅学月卡
-                    </div>
-                  </div>
-                  <div>
-                    <span>¥99</span>
-                    <small>/ 30天</small>
-                  </div>
-                </div>
-
-                <div className="pricing-tabs" role="tablist">
-                  <button
-                    type="button"
-                    className={`pricing-tab-btn ${payTab === "qrcode" ? "active" : ""}`}
-                    onClick={() => setPayTab("qrcode")}
-                  >
-                    <QrCode size={15} /> 方式一：微信扫码支付
-                  </button>
-                  <button
-                    type="button"
-                    className={`pricing-tab-btn ${payTab === "wechat" ? "active" : ""}`}
-                    onClick={() => setPayTab("wechat")}
-                  >
-                    <Sparkles size={15} /> 方式二：微信客服开通
-                  </button>
-                </div>
-
-                {payTab === "qrcode" ? (
-                  <div className="pricing-qr-box">
-                    <div className="pricing-qr-code">
-                      <QrCode size={64} />
-                      <span>微信支付 · 拾题会员</span>
-                      <small>99.00 元 / 月度</small>
-                    </div>
-                    <p>
-                      请使用微信扫码完成支付，并在<strong>【添加付款备注】</strong>处填写您的登录账号：
-                    </p>
-                    <p style={{ marginTop: "6px" }}>
-                      <strong>【{user.displayName}】</strong>
-                    </p>
-                  </div>
-                ) : (
-                  <div className="pricing-wechat-box">
-                    <p style={{ fontSize: "13px", color: "#615a72", margin: 0 }}>
-                      添加专属客服微信，发送您的账号，客服将在 5 分钟内为您开通：
-                    </p>
-                    <div className="pricing-wechat-val">
-                      <span>{wechatServiceId}</span>
-                      <button
-                        type="button"
-                        className="pricing-copy-btn"
-                        onClick={handleCopyWechat}
-                        title="点击复制微信号"
-                      >
-                        <Copy size={13} /> {copied ? "已复制！" : "复制"}
-                      </button>
-                    </div>
-                    <p style={{ fontSize: "11px", color: "#8d869c", margin: 0 }}>
-                      工作时间：周一至周日 08:30 - 23:00（实时在线协助）
-                    </p>
-                  </div>
-                )}
-
-                {/* 提交开通凭证申请表单 */}
-                {submitted ? (
-                  <div className="pricing-form-success" role="status">
-                    <CheckCircle2 size={24} style={{ margin: "0 auto 8px" }} />
-                    <strong>开通申请已提交！</strong>
-                    <p style={{ margin: "6px 0 0", fontSize: "12px", color: "#458261" }}>
-                      工作人员将在 5~10 分钟内核对并为您激活 VIP 畅学权限。
-                      <br />
-                      开通后请刷新本页面，或随时添加微信客服 <strong>{wechatServiceId}</strong> 加速处理。
-                    </p>
-                  </div>
-                ) : (
-                  <form className="pricing-form" onSubmit={handleApplySubmit}>
-                    <label>
-                      <span>付款微信昵称 / 预留手机号（选填，用于核对加急开通）</span>
-                      <input
-                        type="text"
-                        placeholder="例如：微信昵称或手机号"
-                        value={paymentAccount}
-                        onChange={e => setPaymentAccount(e.target.value)}
-                      />
-                    </label>
-                    <label>
-                      <span>微信支付单号后 4 位（选填）</span>
-                      <input
-                        type="text"
-                        placeholder="例如：8892"
-                        maxLength={8}
-                        value={paymentTxId}
-                        onChange={e => setPaymentTxId(e.target.value)}
-                      />
-                    </label>
-                    <button type="submit" disabled={submitting}>
-                      {submitting ? "正在提交登记..." : "已完成支付，提交开通登记"}
-                    </button>
-                  </form>
-                )}
-
-                <div className="pricing-modal-footer">
-                  <span>
-                    <ShieldCheck size={14} /> 数据严格加密
-                  </span>
-                  <span>
-                    <CheckCircle2 size={14} /> 错题仅自己可见
-                  </span>
-                  <span>
-                    <Lightbulb size={14} /> 7天满意度保障
-                  </span>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

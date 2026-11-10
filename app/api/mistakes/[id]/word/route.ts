@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { query } from "@/db/client";
 import { authenticate } from "@/lib/api-guard";
 import { makeMistakeDocx, mistakeDocxFilename } from "@/lib/mistake-docx";
 import { isVisualQuestion, loadWordSourceImage, needsOriginalPicture } from "@/lib/word-source";
@@ -7,6 +7,7 @@ type MistakeRow = {
   upload_id: string;
   subject: string;
   question: string;
+  question_bounds: number[];
   incorrect_answer: string;
   correct_answer: string;
   reasoning: string;
@@ -14,7 +15,7 @@ type MistakeRow = {
   page_number: number;
   source_name: string;
   created_at: string;
-  similar_questions: string;
+  similar_questions: { question: string; answer: string; explanation: string }[];
 };
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -22,17 +23,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if ("response" in auth) return auth.response.status === 401
     ? Response.redirect(new URL("/login", request.url), 302)
     : auth.response;
-  if (!env.DB) return Response.json({ error: "存储服务暂不可用" }, { status: 503 });
 
   try {
-    const row = await env.DB.prepare(
-      "SELECT upload_id, subject, question, incorrect_answer, correct_answer, reasoning, knowledge_point, page_number, source_name, created_at, similar_questions FROM mistakes WHERE id = ? AND user_id = ?",
-    ).bind((await params).id, auth.user.userId).first<MistakeRow>();
+    const { rows } = await query<MistakeRow>(
+      "SELECT upload_id, subject, question, question_bounds, incorrect_answer, correct_answer, reasoning, knowledge_point, page_number, source_name, created_at, similar_questions FROM mistakes WHERE id = $1 AND user_id = $2",
+      [(await params).id, auth.user.userId]);
+    const row = rows[0];
     if (!row) return Response.json({ error: "错题不存在" }, { status: 404 });
 
     const item = {
       subject: row.subject,
       question: row.question,
+      questionBounds: row.question_bounds,
       incorrectAnswer: row.incorrect_answer,
       correctAnswer: row.correct_answer,
       reasoning: row.reasoning,
@@ -40,7 +42,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       pageNumber: row.page_number,
       sourceName: row.source_name,
       createdAt: row.created_at,
-      similarQuestions: JSON.parse(row.similar_questions || "[]") as { question: string; answer: string; explanation: string }[],
+      similarQuestions: row.similar_questions,
       visualQuestion: isVisualQuestion(row.question),
       ...(needsOriginalPicture(row.subject, row.question) ? { sourceImage: await loadWordSourceImage(auth.user.userId, row.upload_id, row.page_number) } : {}),
     };

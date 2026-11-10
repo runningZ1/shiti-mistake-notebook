@@ -15,5 +15,5 @@ export default async function Home() {
   }
   if (!user) return <Landing />;
 
-  return <Dashboard name={user.fullName || "同学"} trialEndsAt={user.trialEndsAt} role={user.role} />;
+  return <Dashboard name={user.fullName || "同学"} trialEndsAt={user.trialEndsAt} paidEndsAt={user.paidEndsAt} role={user.role} />;
 }

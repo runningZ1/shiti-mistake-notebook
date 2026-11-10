@@ -1,23 +1,18 @@
-import { env } from "cloudflare:workers";
+import { query } from "@/db/client";
 import type { PracticeDetail, PracticeGrade, PracticeQuestion, PracticeSummary } from "@/lib/practice-types";
 
 export type PracticePaperRow = {
   id: string; user_id: string; subject: string; unit_name: string; grade_level: string;
-  questions: string; answers: string; grading: string; created_at: string; graded_at: string | null;
+  questions: PracticeQuestion[]; answers: string[]; grading: PracticeGrade[]; created_at: string; graded_at: string | null;
 };
 
 const columns = "id, user_id, subject, unit_name, grade_level, questions, answers, grading, created_at, graded_at";
 
-function db(): D1Database {
-  if (!env.DB) throw new Error("存储服务暂不可用");
-  return env.DB;
-}
-
 export function parsePaper(row: PracticePaperRow) {
   return {
-    questions: JSON.parse(row.questions) as PracticeQuestion[],
-    answers: JSON.parse(row.answers) as string[],
-    grading: JSON.parse(row.grading) as PracticeGrade[],
+    questions: row.questions,
+    answers: row.answers,
+    grading: row.grading,
   };
 }
 
@@ -44,23 +39,24 @@ export function paperDetail(row: PracticePaperRow): PracticeDetail {
 }
 
 export async function listPracticePapers(userId: string): Promise<PracticePaperRow[]> {
-  const { results } = await db().prepare(`SELECT ${columns} FROM practice_papers WHERE user_id = ? ORDER BY created_at DESC LIMIT 100`).bind(userId).all<PracticePaperRow>();
-  return results;
+  const { rows } = await query<PracticePaperRow>(`SELECT ${columns} FROM practice_papers WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`, [userId]);
+  return rows;
 }
 
 export async function getPracticePaper(id: string, userId: string): Promise<PracticePaperRow | null> {
-  return db().prepare(`SELECT ${columns} FROM practice_papers WHERE id = ? AND user_id = ?`).bind(id, userId).first<PracticePaperRow>();
+  const { rows } = await query<PracticePaperRow>(`SELECT ${columns} FROM practice_papers WHERE id = $1 AND user_id = $2`, [id, userId]);
+  return rows[0] ?? null;
 }
 
 export async function insertPracticePaper(input: {
   id: string; userId: string; subject: string; unitName: string; gradeLevel: string;
   questions: PracticeQuestion[]; createdAt: string;
 }): Promise<void> {
-  await db().prepare("INSERT INTO practice_papers (id, user_id, subject, unit_name, grade_level, questions, answers, grading, created_at) VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', ?)")
-    .bind(input.id, input.userId, input.subject, input.unitName, input.gradeLevel, JSON.stringify(input.questions), input.createdAt).run();
+  await query("INSERT INTO practice_papers (id, user_id, subject, unit_name, grade_level, questions, answers, grading, created_at) VALUES ($1, $2, $3, $4, $5, $6::jsonb, '[]'::jsonb, '[]'::jsonb, $7)",
+    [input.id, input.userId, input.subject, input.unitName, input.gradeLevel, JSON.stringify(input.questions), input.createdAt]);
 }
 
 export async function savePracticeGrade(id: string, userId: string, answers: string[], grading: PracticeGrade[], gradedAt: string): Promise<void> {
-  await db().prepare("UPDATE practice_papers SET answers = ?, grading = ?, graded_at = ? WHERE id = ? AND user_id = ?")
-    .bind(JSON.stringify(answers), JSON.stringify(grading), gradedAt, id, userId).run();
+  await query("UPDATE practice_papers SET answers = $1::jsonb, grading = $2::jsonb, graded_at = $3 WHERE id = $4 AND user_id = $5",
+    [JSON.stringify(answers), JSON.stringify(grading), gradedAt, id, userId]);
 }

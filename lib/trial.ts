@@ -17,3 +17,14 @@ export function extendTrialByWeek(trialEndsAt: string, nowMs = Date.now()): stri
   const endMs = Date.parse(trialEndsAt);
   return trialEndFrom(Math.max(nowMs, Number.isFinite(endMs) ? endMs : nowMs));
 }
+
+/** Paid membership extends access independently of the original trial. */
+export function accessEndsAt(trialEndsAt: string | null, paidEndsAt: string | null): string | null {
+  if (trialEndsAt === null) return null;
+  const trial = Date.parse(trialEndsAt);
+  const paid = paidEndsAt ? Date.parse(paidEndsAt) : NaN;
+  return Number.isFinite(paid) && (!Number.isFinite(trial) || paid > trial) ? paidEndsAt : trialEndsAt;
+}
+export function isAccessExpired(trialEndsAt: string | null, paidEndsAt: string | null, nowMs = Date.now()): boolean {
+  return isTrialExpired(accessEndsAt(trialEndsAt, paidEndsAt), nowMs);
+}

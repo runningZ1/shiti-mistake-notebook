@@ -1,8 +1,7 @@
-// 密钥一律不写在这里。DeepSeek API Key 存放于同目录的 .dev.vars（权限 600），
-// 由 wrangler 的 --env-file 在启动时加载。本文件只保留非敏感的进程运行参数。
-//
-// 应用通过 `wrangler dev --local` 运行：Miniflare 在本地模拟 D1 与 R2，
-// 数据持久化在 /opt/shiti-mistake-notebook/.wrangler/state，不需要 Cloudflare 账号。
+// DATABASE_URL、DeepSeek API Key 与 SESSION_SECRET 存放于 .dev.vars（权限 600），
+// 由 Wrangler 的 --env-file 在启动时加载。
+// vinext/Workers 通过 Wrangler 本地运行，业务数据库连接真实 PostgreSQL；
+// R2 图片数据持久化在 /opt/shiti-mistake-notebook/.wrangler/state。
 module.exports = {
   apps: [{
     name: 'shiti-notebook',

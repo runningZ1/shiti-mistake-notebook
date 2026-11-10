@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { makeMistakesDocx, mistakesDocxFilename } from "@/lib/mistake-docx";
-import { isTrialExpired } from "@/lib/trial";
+import { isTrialExpired, accessEndsAt } from "@/lib/trial";
 import type { PracticeSummary } from "@/lib/practice-types";
 import KnowledgeMap from "./knowledge-map";
 import UnitPractice from "./unit-practice";
@@ -183,7 +183,7 @@ function MistakeCard({ item, onSimilar, onExport, onDelete, onSelect, selectedFo
   </article>;
 }
 
-export default function Dashboard({ name, trialEndsAt, role }: { name: string; trialEndsAt: string | null; role: "user" | "admin" }) {
+export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paidEndsAt, role }: { name: string; trialEndsAt: string | null; paidEndsAt: string | null; role: "user" | "admin" }) {
   const [tab, setTab] = useState<Tab>("home");
   const [mistakes, setMistakes] = useState<Mistake[]>([]);
   const [papers, setPapers] = useState<PracticeSummary[]>([]);
@@ -196,6 +196,7 @@ export default function Dashboard({ name, trialEndsAt, role }: { name: string; t
   const [batchNotice, setBatchNotice] = useState("");
   const [uploading, setUploading] = useState(false);
   const [tipIndex, setTipIndex] = useState(0);
+  const trialEndsAt = accessEndsAt(originalTrialEndsAt, paidEndsAt);
   const [trialExpired, setTrialExpired] = useState(() => role !== "admin" && isTrialExpired(trialEndsAt));
   // 初值就是 true：挂载后必定拉一次错题本，等请求落地再置回 false
   const [loadingList, setLoadingList] = useState(true);
@@ -445,7 +446,7 @@ export default function Dashboard({ name, trialEndsAt, role }: { name: string; t
     <main className="main-area">
       <header className="topbar"><button className="mobile-menu" onClick={() => setMobileMenu(!mobileMenu)} aria-label={mobileMenu ? "关闭菜单" : "打开菜单"} aria-expanded={mobileMenu}><Menu size={22} /></button><div className="breadcrumb">学习空间 <span>/</span> <strong>{tab === "home" ? "学习工作台" : tab === "results" ? "分析结果" : tab === "knowledge" ? "知识图谱" : tab === "practice" ? "单元练习卷" : tab === "essay" ? "英语作文分析" : "我的错题本"}</strong></div><div className="top-right"><span className="today"><CalendarDays size={16} />{new Date().toLocaleDateString("zh-CN", { month: "long", day: "numeric" })}</span><span className="small-avatar">{name.slice(0, 1)}</span></div></header>
       <div className="content-wrap">
-        {trialEndsAt && role !== "admin" && <div className={`trial-banner ${trialExpired ? "expired" : ""}`} role="status"><Sparkles size={18} /><span suppressHydrationWarning>{trialExpired ? "免费体验已结束。已有错题仍可查看；若要继续分析或生成练习，请升级 VIP 会员（¥99/月），开通后刷新页面。" : `免费体验进行中，截止时间：${new Date(trialEndsAt).toLocaleString("zh-CN", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}。`}</span><a href="/pricing" className="trial-upgrade-btn">{trialExpired ? "立即开通 VIP" : "会员方案"}</a></div>}
+        {trialEndsAt && role !== "admin" && <div className={`trial-banner ${trialExpired ? "expired" : ""}`} role="status"><Sparkles size={18} /><span suppressHydrationWarning>{trialExpired ? "体验或会员已到期。已有错题仍可查看；继续分析或生成练习可开通 VIP（¥99／30天）。" : `${paidEndsAt && !isTrialExpired(paidEndsAt) ? "会员有效期至：" : "免费体验截止时间："}${new Date(trialEndsAt).toLocaleString("zh-CN", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}。`}</span><a href="/pricing" className="trial-upgrade-btn">{trialExpired ? "立即开通 VIP" : "会员方案"}</a></div>}
         {error && <div className="error-banner" role="alert"><span>{error}</span><button onClick={() => setError("")} aria-label="关闭提示"><X size={17} /></button></div>}
         {exportFile && <div className="notice-card" role="status"><span>Word 文档已生成，可在下载列表打开后编辑、打印。</span><a className="word-download-link" href={exportFile.url} download={exportFile.name}>再次下载 Word</a><button className="icon-action" onClick={() => setExportFile(null)} aria-label="关闭下载提示"><X size={17} /></button></div>}
         {tab === "home" && <>

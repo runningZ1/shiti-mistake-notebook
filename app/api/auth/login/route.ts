@@ -36,7 +36,6 @@ export async function POST(request: Request) {
 
   if (!username || !password) return fail("请输入用户名和密码", 400);
 
-  if (!env.DB) return fail("存储服务暂不可用", 503);
   if (!env.SESSION_SECRET) return fail("服务端未配置会话密钥，请联系管理员", 503);
 
   let user;

@@ -26,12 +26,12 @@ export default async function LoginPage({
     // 而不是把他卷进重定向环。
     signedIn = false;
   }
-  if (signedIn) redirect("/");
-
   const params = await searchParams;
   const returnTo = safeRelativeReturnPath(
     typeof params.return_to === "string" ? params.return_to : "/",
   );
+  if (signedIn) redirect(returnTo);
+
 
   return <LoginForm returnTo={returnTo} />;
 }

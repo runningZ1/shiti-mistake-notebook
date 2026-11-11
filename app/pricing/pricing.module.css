@@ -1,0 +1,92 @@
+.page { min-height: 100vh; background: #f5f6fa; color: #172033; }
+.page *, .page *::before, .page *::after { box-sizing: border-box; }
+.page a { text-decoration: none; }
+.page svg { flex-shrink: 0; }
+.page a:focus-visible, .page button:focus-visible, .page summary:focus-visible, .tableWrap:focus-visible { outline: 3px solid #818cf8; outline-offset: 4px; }
+.skipLink { position: fixed; top: 12px; left: 16px; z-index: 100; padding: 12px 18px; background: #fff; border-radius: 10px; transform: translateY(-160%); }
+.skipLink:focus { transform: translateY(0); }
+.header { width: min(1180px, 100%); padding: 24px 32px; margin: auto; display: flex; justify-content: space-between; align-items: center; gap: 24px; }
+.brand { display: inline-flex; align-items: center; gap: 10px; color: #172033; flex-shrink: 0; }
+.brandMark { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 13px; background: #4f46e5; color: #fff; }
+.brand strong { font-size: 23px; letter-spacing: 1px; }
+.brand small { color: #64748b; font-size: 12px; margin-left: 3px; }
+.nav { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 20px; }
+.nav > a { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: #475569; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.nav > a:hover { color: #4f46e5; }
+.nav .navCta { border-radius: 12px; padding: 0 16px; background: #4f46e5; color: #fff; }
+.nav .navCta:hover { background: #4338ca; color: #fff; }
+.userChip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #dfe2f7; background: #eeefff; color: #4f46e5; padding: 7px 11px; border-radius: 99px; min-width: 0; max-width: 180px; font-size: 12px; }
+.userChip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.main { width: min(1080px, 100%); margin: auto; padding: 0 32px 28px; }
+.hero { text-align: center; max-width: 760px; margin: auto; padding: 38px 0 28px; }
+.kicker { display: inline-flex; align-items: center; gap: 7px; background: #eeefff; color: #4f46e5; border: 1px solid #dfe2f7; border-radius: 99px; padding: 7px 13px; font-size: 12px; font-weight: 650; }
+.hero h1 { font-size: clamp(27px, 3.5vw, 40px); line-height: 1.5; letter-spacing: -1px; margin: 20px 0 14px; font-weight: 750; }
+.hero > p { font-size: 14px; color: #64748b; line-height: 1.9; margin: 0; }
+.status { display: flex; align-items: flex-start; gap: 9px; padding: 13px 16px; margin: 24px auto 0; border: 1px solid #dfe2f7; border-radius: 12px; background: #eeefff; color: #4f46e5; text-align: left; font-size: 13px; line-height: 1.8; }
+.status svg { margin-top: 3px; }
+.status.expired { color: #946326; background: #fff7eb; border-color: #f0dfc4; }
+.status.vip { color: #267b60; background: #edf8f2; border-color: #cfe8da; }
+.planGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; margin: 18px auto 0; max-width: 940px; }
+.card { min-width: 0; padding: 28px; display: flex; flex-direction: column; border: 1px solid #e4e7ef; border-radius: 18px; background: #fff; box-shadow: 0 8px 24px #17203304; }
+.card.featured { border-color: #818cf8; box-shadow: 0 0 0 1px #818cf8, 0 12px 28px #4f46e508; }
+.cardHead { padding-bottom: 22px; border-bottom: 1px solid #e4e7ef; margin-bottom: 22px; }
+.planLabel { display: inline-flex; align-items: center; gap: 6px; color: #64748b; font-size: 12px; font-weight: 600; min-height: 18px; }
+.featured .planLabel { color: #4f46e5; }
+.card h2 { font-size: 22px; margin: 12px 0 9px; line-height: 1.4; letter-spacing: -.5px; }
+.cardHead > p { color: #64748b; font-size: 13px; line-height: 1.8; margin: 0; min-height: 47px; }
+.price { display: flex; align-items: baseline; gap: 5px; margin-top: 22px; font-variant-numeric: tabular-nums; }
+.price > span { font-size: 24px; font-weight: 650; }
+.price strong { font-size: 48px; line-height: 1; font-weight: 750; letter-spacing: -1.5px; }
+.price small { color: #64748b; font-size: 13px; margin-left: 5px; }
+.featured .price { color: #4f46e5; }
+.priceNote { display: block; color: #64748b; font-size: 12px; margin-top: 14px; line-height: 1.7; }
+.cardBody { flex: 1; display: flex; flex-direction: column; }
+.cardBody > h3 { margin: 0 0 16px; font-size: 13px; color: #475569; font-weight: 650; }
+.featureList { list-style: none; display: grid; gap: 14px; padding: 0; margin: 0 0 26px; }
+.featureList li { display: flex; gap: 9px; align-items: flex-start; color: #475569; font-size: 13px; line-height: 1.8; }
+.featureList svg { margin-top: 4px; color: #4f46e5; }
+.cardAction { margin-top: auto; }
+.primaryCta, .secondaryCta { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; min-height: 44px; padding: 11px 14px; border: 1px solid #4f46e5; border-radius: 12px; font: inherit; font-size: 13px; font-weight: 650; text-align: center; line-height: 1.6; cursor: pointer; }
+.primaryCta { background: #4f46e5; color: #fff; }
+.primaryCta:hover { background: #4338ca; color: #fff; border-color: #4338ca; }
+.secondaryCta { background: #fff; color: #4f46e5; border-color: #d9dcf3; }
+.secondaryCta:hover { border-color: #a5abef; background: #f6f6ff; }
+.primaryCta:disabled, .secondaryCta:disabled { color: #66728a; background: #f2f4f8; border-color: #e4e7ef; cursor: default; }
+.cardAction > p { text-align: center; color: #64748b; font-size: 12px; margin: 10px 0 0; line-height: 1.7; }
+.paymentNote { display: flex; justify-content: center; align-items: flex-start; gap: 7px; color: #64748b; font-size: 12px; line-height: 1.8; margin: 22px auto 0; max-width: 940px; }
+.paymentNote svg { color: #4f46e5; margin-top: 3px; }
+.comparisonSection, .faqSection { margin-top: 58px; scroll-margin-top: 28px; }
+.sectionHeading > span { font-size: 12px; font-weight: 650; color: #4f46e5; letter-spacing: .7px; }
+.sectionHeading h2 { margin: 10px 0 11px; font-size: 25px; letter-spacing: -.5px; line-height: 1.5; }
+.sectionHeading > p { font-size: 13px; color: #64748b; margin: 0; line-height: 1.8; }
+.tableWrap { max-width: 100%; margin-top: 22px; border: 1px solid #e4e7ef; border-radius: 16px; background: #fff; overflow: auto; overscroll-behavior-x: contain; }
+.table { width: 100%; min-width: 580px; border-collapse: collapse; font-size: 13px; line-height: 1.8; text-align: left; }
+.table caption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.table th, .table td { padding: 16px 20px; border-bottom: 1px solid #e9ecf3; }
+.table thead th { background: #f8f9fd; color: #475569; font-weight: 650; white-space: nowrap; }
+.table thead th:last-child { color: #4f46e5; background: #f0f1ff; }
+.table tbody th { width: 38%; color: #334155; font-weight: 550; }
+.table td { color: #64748b; }
+.table td:last-child { color: #4f46e5; }
+.table tr:last-child th, .table tr:last-child td { border-bottom: 0; }
+.tableHint { display: none; color: #64748b; font-size: 12px; margin: 10px 0 0; }
+.faqGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; margin-top: 22px; }
+.faqCard { min-width: 0; background: #fff; border: 1px solid #e4e7ef; border-radius: 14px; overflow: hidden; }
+.faqCard summary { display: flex; align-items: center; min-height: 66px; gap: 10px; padding: 18px; list-style: none; font-size: 13px; font-weight: 650; color: #334155; line-height: 1.7; cursor: pointer; }
+.faqCard summary::-webkit-details-marker { display: none; }
+.faqCard summary > svg { color: #6366f1; }
+.faqCard summary > span:first-of-type { flex: 1; min-width: 0; }
+.faqToggle { flex-shrink: 0; display: grid; place-items: center; height: 24px; width: 24px; border-radius: 8px; background: #f0f1ff; color: #4f46e5; font-size: 18px; font-weight: 400; }
+.faqCard[open] .faqToggle { transform: rotate(45deg); }
+.faqCard[open] summary { color: #4f46e5; }
+.faqCard > p { color: #64748b; font-size: 13px; line-height: 1.9; padding: 0 18px 18px 46px; margin: 0; }
+.bottom { display: flex; align-items: center; justify-content: space-between; gap: 28px; padding: 30px; margin-top: 42px; background: #eeefff; border: 1px solid #dfe2f7; border-radius: 18px; }
+.bottom > div > span { color: #4f46e5; font-size: 12px; font-weight: 650; }
+.bottom h2 { margin: 10px 0; font-size: 24px; line-height: 1.5; }
+.bottom p { font-size: 13px; color: #64748b; line-height: 1.8; margin: 0; }
+.bottom > a { width: auto; flex-shrink: 0; }
+.footer { width: min(1180px, 100%); display: flex; justify-content: space-between; gap: 16px; padding: 12px 32px 28px; margin: auto; color: #64748b; font-size: 12px; line-height: 1.8; }
+.footer a { display: inline-flex; align-items: center; gap: 6px; color: #4f46e5; }
+@media (max-width: 850px) { .brand small { display: none; } .nav { gap: 14px; } .card { padding: 25px 22px; } .faqGrid { grid-template-columns: 1fr; } .bottom { padding: 26px; } }
+@media (max-width: 680px) { .header { padding: 18px 20px; gap: 16px; } .nav .faqLink { display: none; } .userChip { max-width: 110px; } .main { padding: 0 20px 24px; } .hero { padding: 26px 0 22px; } .hero h1 { font-size: 29px; margin-top: 16px; } .hero > p { font-size: 13px; } .desktopBreak { display: none; } .planGrid { grid-template-columns: minmax(0, 1fr); gap: 20px; max-width: 460px; margin-top: 12px; } .card { padding: 26px; } .cardHead > p { min-height: 0; } .tableHint { display: block; } .comparisonSection, .faqSection { margin-top: 40px; } .bottom { flex-direction: column; align-items: stretch; gap: 22px; padding: 24px; } .bottom > a { width: 100%; } .footer { padding: 12px 20px 24px; flex-wrap: wrap; gap: 8px; } }
+@media (max-width: 400px) { .header { padding: 16px; flex-wrap: wrap; gap: 12px; } .brand { gap: 7px; } .brandMark { width: 34px; height: 34px; border-radius: 11px; } .brand strong { font-size: 20px; } .nav { gap: 12px; } .nav > a { font-size: 12px; min-height: 40px; } .nav .navCta { padding: 0 11px; gap: 4px; } .userChip { display: none; } .main { padding-left: 16px; padding-right: 16px; } .hero h1 { font-size: 27px; letter-spacing: -.7px; } .card { padding: 24px 20px; } .primaryCta, .secondaryCta { gap: 5px; padding-left: 10px; padding-right: 10px; } .cardHead { margin-bottom: 20px; } .status { padding: 12px; gap: 8px; font-size: 12px; } .faqCard summary { padding: 16px; gap: 8px; } .faqCard > p { padding-left: 42px; padding-right: 16px; } .bottom { padding: 23px 20px; } }

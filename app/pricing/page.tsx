@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "会员方案与定价 · 拾题智能错题本",
-  description: "清晰透明的会员方案，新用户免费体验 7 天，VIP 畅学会员每月仅需 99 元，畅享全学科智能批改、举一反三变式练习、知识图谱与作文批改。",
+  description: "新用户免费体验 7 天，VIP 会员每次购买 99 元增加 30 天使用权限。了解拍照批改、错题整理、练习生成与会员支付说明。",
 };
 
 export default async function PricingPage() {

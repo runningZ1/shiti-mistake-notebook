@@ -1,42 +1,50 @@
-import { ArrowRight, BookOpen, Camera, CheckCircle2, ClipboardList, Lightbulb, Network, ShieldCheck, Sparkles } from "lucide-react";
-import Link from "next/link";
+/* eslint-disable @next/next/no-html-link-for-pages -- vinext beta 当前 next/link 点击崩溃，使用整页导航。 */
+import { ArrowRight, BookOpen, Camera, CheckCircle2, ClipboardList, Network, PenLine, ShieldCheck, Sparkles } from "lucide-react";
+import styles from "./landing.module.css";
+
+const features = [
+  { icon: Camera, title: "拍照就能开始", description: "上传试卷、作业或答题卷，一次最多 4 张图片。拍清题目与作答，方便逐题核对。" },
+  { icon: CheckCircle2, title: "逐题批改分析", description: "结合已有批改或智能判题，查看对错、正确答案与分步思路，不清楚的题留待核对。" },
+  { icon: BookOpen, title: "错题归档练习", description: "按科目与时间整理个人错题，围绕同一知识点生成举一反三练习。" },
+  { icon: Network, title: "知识图谱", description: "从错题中梳理知识点，了解反复出错的内容，安排下一步复习。" },
+  { icon: ClipboardList, title: "单元练习卷", description: "输入单元名称生成练习，支持在线作答与批改，也能下载附解析的 Word 试卷。" },
+  { icon: PenLine, title: "英语作文批改", description: "上传作文图片，查看拼写、语法和表达建议，结合润色内容逐句学习。" },
+];
 
 export default function Landing() {
-  return <div className="landing-page">
-    <header className="landing-header">
-      <Link className="landing-brand" href="/" aria-label="拾题首页"><span className="landing-brand-mark"><BookOpen size={23} /></span><strong>拾题</strong><small>智能错题本</small></Link>
-      <nav aria-label="首页导航"><a href="#how-it-works">使用方法</a><a href="#features">功能介绍</a><a href="/pricing">会员方案</a><a className="landing-login" href="/login">登录</a><a className="landing-nav-cta" href="/register">免费体验 <ArrowRight size={15} /></a></nav>
+  return <div className={styles.page}>
+    <a className={styles.skipLink} href="#landing-main">跳至主要内容</a>
+    <header className={styles.header}>
+      <a className={styles.brand} href="/" aria-label="拾题首页"><span className={styles.brandMark}><BookOpen size={23} aria-hidden="true" /></span><strong>拾题</strong><small>智能错题本</small></a>
+      <nav className={styles.nav} aria-label="首页导航"><a className={styles.sectionLink} href="#how-it-works">使用方法</a><a className={styles.sectionLink} href="#features">功能介绍</a><a className={styles.pricingLink} href="/pricing">会员方案</a><a href="/login">登录</a><a className={styles.navCta} href="/register">免费体验 <ArrowRight size={15} aria-hidden="true" /></a></nav>
     </header>
-
-    <main>
-      <section className="landing-hero">
-        <div className="landing-hero-copy">
-          <span className="landing-offer"><Sparkles size={15} />新用户免费体验一周</span>
-          <h1>把作业拍下来，<br /><em>让每道错题都有解。</em></h1>
+    <main id="landing-main" className={styles.main}>
+      <section className={styles.hero} aria-labelledby="landing-title">
+        <div className={styles.heroCopy}>
+          <span className={styles.offer}><Sparkles size={15} aria-hidden="true" />新用户免费体验 7 天</span>
+          <h1 id="landing-title">把作业拍下来，<br /><em>把错题真正弄明白。</em></h1>
           <p>已批改的试卷，帮你找出错题；还没批改的作业，先逐题判定，再整理答案、思路与知识点。</p>
-          <div className="landing-hero-actions"><a className="landing-primary" href="/register">注册并开始 7 天体验 <ArrowRight size={18} /></a><a className="landing-secondary" href="/login">已有账号，去登录</a></div>
-          <div className="landing-trust"><span><CheckCircle2 size={15} />注册后即可开始</span><span><ShieldCheck size={15} />错题仅自己可见</span></div>
+          <div className={styles.heroActions}><a className={styles.primary} href="/register">注册并开始体验 <ArrowRight size={18} aria-hidden="true" /></a><a className={styles.secondary} href="/login">已有账号，去登录</a></div>
+          <div className={styles.trust}><span><CheckCircle2 size={15} aria-hidden="true" />注册后即可开始</span><span><ShieldCheck size={15} aria-hidden="true" />个人账号管理错题</span></div>
         </div>
-        <div className="landing-demo" aria-label="智能批改结果示意">
-          <div className="landing-demo-top"><span><BookOpen size={17} />拾题 · 批改示例</span><span className="landing-demo-pill">分析完成</span></div>
-          <div className="landing-demo-paper"><span className="landing-demo-label">数学 · 第 1 题</span><strong>解方程：2x + 6 = 14</strong><div><span>我的答案</span><b>x = 3</b><span className="landing-demo-wrong">需要订正</span></div><div><span>正确答案</span><b>x = 4</b><span className="landing-demo-right"><CheckCircle2 size={15} /></span></div></div>
-          <div className="landing-demo-note"><Lightbulb size={17} /><span>先移项得到 2x = 8，再将两边同时除以 2。</span></div>
-          <span className="landing-demo-caption">示意内容，实际结果以清晰图片和题目为准</span>
-        </div>
+        <aside className={styles.workflow} aria-labelledby="workflow-title">
+          <div className={styles.workflowHeading}><span className={styles.eyebrow}>学习流程</span><BookOpen size={22} aria-hidden="true" /></div>
+          <h2 id="workflow-title">一份作业，三步整理</h2>
+          <p className={styles.workflowIntro}>从上传到复习，知道每一步该做什么。</p>
+          <ol className={styles.workflowList}>
+            <li><span className={styles.stepNumber}>01</span><div><h3>上传题目与作答</h3><p>选择科目，上传清晰图片，确认批改方式。</p></div><Camera size={20} aria-hidden="true" /></li>
+            <li><span className={styles.stepNumber}>02</span><div><h3>核对批改与解析</h3><p>逐题查看结果，结合解题思路订正答案。</p></div><CheckCircle2 size={20} aria-hidden="true" /></li>
+            <li><span className={styles.stepNumber}>03</span><div><h3>整理错题，再练一次</h3><p>回顾知识点，用类似题检查是否掌握。</p></div><BookOpen size={20} aria-hidden="true" /></li>
+          </ol>
+          <div className={styles.workflowNote}><ShieldCheck size={16} aria-hidden="true" /><span>智能分析供学习参考，重要答案请认真核对。</span></div>
+        </aside>
       </section>
-
-      <section className="landing-section" id="features"><div className="landing-section-head"><span>WHY SHITI</span><h2>从批改到巩固，一步步理清思路</h2></div><div className="landing-feature-grid">
-        <article><span className="landing-feature-icon purple"><Camera size={22} /></span><h3>拍照就能开始</h3><p>上传试卷、作业或答题卷。一次最多 4 张图片，题目与作答放在一起更容易核对。</p></article>
-        <article><span className="landing-feature-icon peach"><CheckCircle2 size={22} /></span><h3>逐题批改分析</h3><p>结合已有批改或智能判题，展示对错、正确答案和分步思路。不清楚的题留待核对。</p></article>
-        <article><span className="landing-feature-icon mint"><BookOpen size={22} /></span><h3>错题归档练习</h3><p>错题按科目与时间整理进个人错题本，还能围绕同一知识点生成举一反三练习。</p></article>
-        <article><span className="landing-feature-icon purple"><Network size={22} /></span><h3>知识图谱</h3><p>直观看到哪些知识点反复出错，先回顾概念和方法，再有针对性地练习。</p></article>
-        <article><span className="landing-feature-icon peach"><ClipboardList size={22} /></span><h3>单元练习卷</h3><p>输入单元名称即可出卷，支持在线作答与批改，也可下载带解析的 Word 试卷。</p></article>
+      <section className={styles.features} id="features" aria-labelledby="features-title"><div className={styles.sectionHeading}><span className={styles.eyebrow}>围绕每一道错题</span><h2 id="features-title">从批改到巩固，一步步理清思路</h2><p>把零散的作业和试卷，整理成可以反复复习的学习资料。</p></div><div className={styles.featureGrid}>
+        {features.map(({ icon: Icon, title, description }) => <article key={title}><span className={styles.featureIcon}><Icon size={22} aria-hidden="true" /></span><h3>{title}</h3><p>{description}</p></article>)}
       </div></section>
-
-      <section className="landing-steps" id="how-it-works"><div><span>01 / 上传</span><strong>拍清题目与作答</strong></div><div><span>02 / 批改</span><strong>查看逐题结果与解析</strong></div><div><span>03 / 巩固</span><strong>收藏错题并继续练习</strong></div></section>
-
-      <section className="landing-bottom"><div><span>给每一次认真作答一个好去处</span><h2>新用户免费体验 7 天</h2><p>体验到期后仍可查看已有错题；继续分析和生成练习，可升级 VIP 会员（¥99/月）。</p></div><div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}><a href="/pricing" style={{ background: "rgba(255,255,255,0.12)", color: "#fff", padding: "14px 20px", borderRadius: "9px", fontSize: "12px", fontWeight: 700, border: "1px solid rgba(255,255,255,0.2)" }}>会员方案 (¥99/月)</a><a href="/register">立即创建账号 <ArrowRight size={18} /></a></div></section>
+      <section className={styles.steps} id="how-it-works" aria-labelledby="steps-title"><div className={styles.stepsIntro}><span className={styles.eyebrow}>开始使用</span><h2 id="steps-title">从手边的一份作业开始</h2></div><ol><li><span>01 / 上传</span><strong>拍清题目与作答</strong></li><li><span>02 / 批改</span><strong>核对逐题结果与解析</strong></li><li><span>03 / 巩固</span><strong>回顾错题并继续练习</strong></li></ol></section>
+      <section className={styles.bottom}><div><span className={styles.eyebrow}>给认真作答一个好去处</span><h2>先体验，再决定</h2><p>新用户免费体验 7 天。到期后仍可查看已有错题；继续分析和生成练习，可升级 VIP（¥99 / 30 天）。</p></div><div className={styles.bottomActions}><a className={styles.secondary} href="/pricing">查看会员方案</a><a className={styles.primary} href="/register">立即创建账号 <ArrowRight size={18} aria-hidden="true" /></a></div></section>
     </main>
-    <footer className="landing-footer"><div><span>拾题 · 把每一次错误，变成进步</span><span style={{ margin: "0 8px" }}>·</span><a href="/pricing" style={{ color: "#7765bd", fontWeight: 700 }}>会员价格</a></div><span>智能批改供学习参考，请核对重要答案。</span></footer>
+    <footer className={styles.footer}><span>拾题 · 把每一次错误，变成进步</span><a href="/pricing">会员价格与常见问题 <ArrowRight size={14} aria-hidden="true" /></a></footer>
   </div>;
 }

@@ -1,7 +1,9 @@
 "use client";
+/* eslint-disable @next/next/no-html-link-for-pages -- vinext beta 当前 next/link 点击崩溃，使用整页导航。 */
 
 import { useState, type FormEvent } from "react";
 import { ArrowRight, BookOpen, LoaderCircle } from "lucide-react";
+import styles from "./auth.module.css";
 
 export default function LoginForm({ returnTo }: { returnTo: string }) {
   const [username, setUsername] = useState("");
@@ -41,83 +43,33 @@ export default function LoginForm({ returnTo }: { returnTo: string }) {
   }
 
   return (
-    <div className="login-page">
-      <span className="login-glow" aria-hidden="true" />
-      <main className="login-card">
-        <div className="login-brand">
-          <span className="brand-mark">
-            <BookOpen size={25} strokeWidth={2.2} />
-          </span>
-          <span>
-            <strong>拾题</strong>
-            <small>把每一次错误，变成进步</small>
-          </span>
-        </div>
-
-        <h1>欢迎回来</h1>
-        <p className="login-subtitle">登录后继续整理你的错题本。</p>
-
-        <form className="login-form" onSubmit={submit}>
-          <label>
-            <span>用户名</span>
-            <input
-              name="username"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              autoComplete="username"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              autoFocus
-              required
-            />
-          </label>
-
-          <label>
-            <span>密码</span>
-            <input
-              name="password"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-              required
-            />
-          </label>
-
-          {error && (
-            <div className="login-error" role="alert">
-              {error}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            className="login-submit"
-            disabled={pending || !username || !password}
-          >
-            {pending ? (
-              <>
-                <LoaderCircle size={17} className="spin" />
-                正在登录...
-              </>
-            ) : (
-              <>
-                进入学习空间 <ArrowRight size={16} />
-              </>
-            )}
-          </button>
-        </form>
-
-        <p className="login-switch">
-          还没有账号？
-          {/* vinext 客户端 Link 跳转会报错，认证入口使用整页导航。 */}
-          <a href="/register" className="login-link">立即注册</a>
-        </p>
-
-        <p className="login-footnote">
-          错题只对登录的账号可见，登录状态保留 30 天。忘记密码请联系管理员重置。
-        </p>
+    <div className={styles.page}>
+      <header className={styles.header}>
+        <a className={styles.brand} href="/" aria-label="拾题首页"><span className={styles.brandMark}><BookOpen size={23} aria-hidden="true" /></span><strong>拾题</strong><small>智能错题本</small></a>
+        <a className={styles.backLink} href="/">返回首页 <ArrowRight size={14} aria-hidden="true" /></a>
+      </header>
+      <main className={styles.layout}>
+        <aside className={styles.intro} aria-label="学习提示">
+          <span className={styles.eyebrow}>每一次订正，都是进步</span>
+          <h2>让错题有归处，<br />让复习有方向。</h2>
+          <p>从一道题的答案，找到一类题的思路。回到你的学习空间，接着上一次的积累继续学。</p>
+          <ol><li><span>01</span>拍清题目与作答</li><li><span>02</span>核对答案与解题思路</li><li><span>03</span>回顾知识点，再练一次</li></ol>
+        </aside>
+        <section className={styles.card} aria-labelledby="login-title">
+          <span className={styles.eyebrow}>登录你的账号</span>
+          <h1 id="login-title">欢迎回来</h1>
+          <p className={styles.subtitle}>登录后继续整理你的错题本。</p>
+          <form className={styles.form} onSubmit={submit} aria-busy={pending}>
+            <label htmlFor="login-username"><span>用户名</span><input id="login-username" name="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required disabled={pending} aria-describedby={error ? "login-error" : undefined} /></label>
+            <label htmlFor="login-password"><span>密码</span><input id="login-password" name="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required disabled={pending} aria-describedby={error ? "login-error" : undefined} /></label>
+            {error && <div id="login-error" className={styles.error} role="alert">{error}</div>}
+            <button type="submit" className={styles.submit} disabled={pending || !username || !password}>
+              {pending ? <><LoaderCircle size={17} className={styles.spin} aria-hidden="true" />正在登录…</> : <>进入学习空间 <ArrowRight size={16} aria-hidden="true" /></>}
+            </button>
+          </form>
+          <p className={styles.switch}>还没有账号？<a href={`/register?return_to=${encodeURIComponent(returnTo)}`}>立即注册</a></p>
+          <p className={styles.footnote}>登录状态保留 30 天。忘记密码请联系管理员重置。</p>
+        </section>
       </main>
     </div>
   );

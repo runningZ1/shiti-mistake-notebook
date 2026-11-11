@@ -1,13 +1,13 @@
 ﻿"use client";
+/* eslint-disable @next/next/no-html-link-for-pages -- vinext beta 实测 next/link 客户端跳转抛错，使用原生链接整页导航。 */
 import {
   useEffect,
+  useId,
   useRef,
   useState,
   type FormEvent,
   type ReactNode,
 } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   BookOpen,
   Users,
@@ -78,6 +78,17 @@ const message = (e: unknown) =>
   e instanceof Error ? e.message : "操作失败，请重试";
 const date = (v: string | null) =>
   v ? new Date(v).toLocaleString("zh-CN", { hour12: false }) : "从未登录";
+const readFilter = (key: string, fallback = "") =>
+  typeof window === "undefined" ? fallback : new URLSearchParams(window.location.search).get(key) ?? fallback;
+const readPage = () => Math.max(1, Math.floor(Number(readFilter("page", "1"))) || 1);
+function updateQuery(values: Record<string, string>, replace = false) {
+  const params = new URLSearchParams(window.location.search);
+  Object.entries(values).forEach(([key, value]) => {
+    if (value) params.set(key, value);
+    else params.delete(key);
+  });
+  window.history[replace ? "replaceState" : "pushState"](null, "", `${window.location.pathname}?${params}`);
+}
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     cache: "no-store",
@@ -167,25 +178,35 @@ function Modal({
   busy?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   useEffect(() => {
     const dialog = ref.current;
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     dialog?.showModal();
-    return () => dialog?.close();
+    return () => {
+      dialog?.close();
+      document.body.style.overflow = overflow;
+      if (trigger?.isConnected) trigger.focus();
+    };
   }, []);
   return (
     <dialog
       ref={ref}
       className="ac-dialog"
-      aria-labelledby="ac-dialog-title"
+      aria-labelledby={titleId}
+      aria-busy={busy}
       onCancel={(e) => {
         e.preventDefault();
         if (!busy) close();
       }}
     >
       <header>
-        <h2 id="ac-dialog-title">{title}</h2>
+        <h2 id={titleId}>{title}</h2>
         <button
           type="button"
+          autoFocus
           aria-label="关闭弹窗"
           disabled={busy}
           onClick={close}
@@ -211,13 +232,13 @@ function Pager({
   return (
     <footer className="ac-pager">
       <span>
-        共 {total} 条 · 第 {page} / {totalPages} 页
+        共 {total} 条 · 第 {Math.max(1, page)} / {Math.max(1, totalPages)} 页
       </span>
       <div>
         <button disabled={page <= 1} onClick={() => change(page - 1)}>
           上一页
         </button>
-        <button disabled={page >= totalPages} onClick={() => change(page + 1)}>
+        <button disabled={page >= Math.max(1, totalPages)} onClick={() => change(page + 1)}>
           下一页
         </button>
       </div>
@@ -234,6 +255,7 @@ export default function AdminConsole({
   const [tab, setTab] = useState<Tab>("overview");
   const [revision, setRevision] = useState(0);
   const [context, setContext] = useState({ userId: "", uploadId: "", subject: "" });
+  const savedQueries = useRef(new Map<Tab, string>());
   useEffect(() => {
     const sync = () => {
       const params = new URLSearchParams(window.location.search);
@@ -246,12 +268,23 @@ export default function AdminConsole({
     window.addEventListener("popstate", sync);
     return () => window.removeEventListener("popstate", sync);
   }, []);
-  function navigate(next: Tab, filters = { userId: "", uploadId: "", subject: "" }) {
-    const params = new URLSearchParams({ tab: next });
-    Object.entries(filters).forEach(([key, value]) => { if (value) params.set(key, value); });
+  function navigate(next: Tab, filters?: { userId: string; uploadId: string; subject: string }) {
+    if (next === tab && !filters) return;
+    savedQueries.current.set(tab, window.location.search);
+    const params = new URLSearchParams(savedQueries.current.get(next) ?? window.location.search);
+    if (!savedQueries.current.has(next)) {
+      ["search", "role", "status", "access", "sort", "page", "userId", "uploadId", "subject"].forEach(key => params.delete(key));
+    }
+    params.set("tab", next);
+    if (filters) {
+      params.delete("search");
+      params.delete("page");
+      Object.entries(filters).forEach(([key, value]) => { if (value) params.set(key, value); else params.delete(key); });
+    }
     window.history.pushState(null, "", `/admin?${params}`);
-    setContext(filters);
+    setContext({ userId: params.get("userId") || "", uploadId: params.get("uploadId") || "", subject: params.get("subject") || "" });
     setTab(next);
+    setRevision(value => value + 1);
   }
   return (
     <div className="ac-shell">
@@ -278,11 +311,11 @@ export default function AdminConsole({
         </nav>
         <footer>
           <span>管理员 · {currentUserName}</span>
-          <Link href="/admin/payment-test">支付宝支付测试</Link>
-          <Link href="/">
+          <a href="/admin/payment-test">支付宝支付测试</a>
+          <a href="/">
             <ArrowLeft size={16} />
             返回错题本
-          </Link>
+          </a>
         </footer>
       </aside>
       <main className="ac-main">
@@ -404,12 +437,12 @@ function UserManager({ self, navigate }: { self: string; navigate: Navigate }) {
   const { data, error, refresh } = useData<{ users: User[] }>(
     "/api/admin/users",
   );
-  const [search, setSearch] = useState("");
-  const [role, setRole] = useState("");
-  const [status, setStatus] = useState("");
-  const [access, setAccess] = useState("");
-  const [sort, setSort] = useState("created");
-  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState(() => readFilter("search"));
+  const [role, setRole] = useState(() => readFilter("role"));
+  const [status, setStatus] = useState(() => readFilter("status"));
+  const [access, setAccess] = useState(() => readFilter("access"));
+  const [sort, setSort] = useState(() => readFilter("sort", "created"));
+  const [page, setPage] = useState(readPage);
   const [modal, setModal] = useState<UserModal | null>(null);
   const [notice, setNotice] = useState("");
   const [now, setNow] = useState(() => Date.now());
@@ -428,6 +461,9 @@ function UserManager({ self, navigate }: { self: string; navigate: Navigate }) {
   ).sort((a, b) => sort === "mistakes" ? b.mistakeCount - a.mistakeCount : sort === "login" ? Date.parse(b.lastLoginAt || "1970-01-01") - Date.parse(a.lastLoginAt || "1970-01-01") : Date.parse(b.createdAt) - Date.parse(a.createdAt));
   const totalPages = Math.max(1, Math.ceil(list.length / 20));
   const shownPage = Math.min(page, totalPages);
+  useEffect(() => {
+    updateQuery({ search, role, status, access, sort: sort === "created" ? "" : sort, page: String(data ? shownPage : page) }, true);
+  }, [search, role, status, access, sort, page, shownPage, data]);
   // 剪贴板 API 只在 HTTPS 下可用；IP 直连的 http 入口会失败，此时提示手动复制
   async function copyWechat(wechat: string) {
     try {
@@ -504,8 +540,8 @@ function UserManager({ self, navigate }: { self: string; navigate: Navigate }) {
         <Loading error={error} retry={refresh} />
       ) : (
         <div className="ac-panel">
-          <div className="ac-scroll">
-            <table>
+          <div className="ac-scroll" role="region" aria-label="用户列表，可横向滚动" tabIndex={0}>
+            <table aria-label="用户管理">
               <thead>
                 <tr>
                   <th>用户</th>
@@ -628,7 +664,6 @@ function UserEditor({
   close: () => void;
   saved: (text: string) => void;
 }) {
-  const router = useRouter();
   const user = "user" in modal ? modal.user : undefined;
   const [username, setUsername] = useState("");
   const [name, setName] = useState(user?.displayName || "");
@@ -695,7 +730,7 @@ function UserEditor({
         },
       );
       if (modal.mode === "password" && user?.id === self) {
-        router.push("/login?return_to=%2Fadmin");
+        window.location.assign("/login?return_to=%2Fadmin");
         return;
       }
       saved(`${title}成功`);
@@ -835,15 +870,17 @@ function UserEditor({
   );
 }
 function ContentManager({ kind, initialFilters, navigate }: { kind: "mistakes" | "uploads"; initialFilters: { userId: string; uploadId: string; subject: string }; navigate: Navigate }) {
-  const [filters, setFilters] = useState(() => ({ search: typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("search") || "", ...initialFilters }));
+  const [filters, setFilters] = useState(() => ({ search: readFilter("search"), ...initialFilters }));
   function persistFilters(next: typeof filters) {
-    const params = new URLSearchParams({ tab: kind });
-    Object.entries(next).forEach(([key, value]) => { if (value) params.set(key, value); });
-    window.history.pushState(null, "", `/admin?${params}`);
+    updateQuery({ tab: kind, ...next, page: "1" });
     setFilters(next);
   }
   const [draft, setDraft] = useState(filters);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(readPage);
+  function changePage(next: number) {
+    updateQuery({ page: String(next) });
+    setPage(next);
+  }
   const query = new URLSearchParams({
     ...filters,
     page: String(page),
@@ -852,7 +889,7 @@ function ContentManager({ kind, initialFilters, navigate }: { kind: "mistakes" |
   const { data, error, refresh } = useData<Page>(`/api/admin/${kind}?${query}`);
   const users = useData<{ users: User[] }>("/api/admin/users");
   const stats = useData<AdminOverviewStats>("/api/admin/stats");
-  const availableSubjects = [...new Set([...subjects, ...(stats.data?.subjectDistribution.map((item) => item.subject) || [])])];
+  const availableSubjects = [...new Set([...subjects, ...(filters.subject ? [filters.subject] : []), ...(stats.data?.subjectDistribution.map((item) => item.subject) || [])])];
   const [editing, setEditing] = useState<AdminMistakeItem | null>(null);
   const [deleting, setDeleting] = useState<
     AdminMistakeItem | AdminUploadItem | null
@@ -871,7 +908,7 @@ function ContentManager({ kind, initialFilters, navigate }: { kind: "mistakes" |
       setDeleting(null);
       setNotice("删除成功");
       if (page > 1 && (data?.mistakes || data?.uploads || []).length === 1)
-        setPage(page - 1);
+        changePage(page - 1);
       else refresh();
     } catch (e) {
       setActionError(message(e));
@@ -964,6 +1001,7 @@ function ContentManager({ kind, initialFilters, navigate }: { kind: "mistakes" |
       )}
       {filters.uploadId && <p className="ac-context" role="status">正在查看指定上传批次的错题 <button onClick={() => navigate("uploads")}>返回上传批次</button></p>}
       {stats.error && <p className="ac-error" role="alert">学科选项加载失败：{stats.error} <button onClick={stats.refresh}>重新加载学科</button></p>}
+      {users.error && <p className="ac-error" role="alert">用户选项加载失败：{users.error} <button onClick={users.refresh}>重新加载用户</button></p>}
       <form
         className="ac-toolbar"
         onSubmit={(e) => {
@@ -980,7 +1018,6 @@ function ContentManager({ kind, initialFilters, navigate }: { kind: "mistakes" |
           value={draft.search}
           onChange={(e) => setDraft({ ...draft, search: e.target.value })}
         />
-        {kind === "mistakes" && (
           <select
             aria-label="筛选学科"
             value={draft.subject}
@@ -991,7 +1028,6 @@ function ContentManager({ kind, initialFilters, navigate }: { kind: "mistakes" |
               <option key={s}>{s}</option>
             ))}
           </select>
-        )}
         <select
           aria-label="筛选用户"
           value={draft.userId}
@@ -1000,6 +1036,7 @@ function ContentManager({ kind, initialFilters, navigate }: { kind: "mistakes" |
           <option value="">
             {users.error ? "用户列表加载失败" : "全部用户"}
           </option>
+          {draft.userId && !users.data?.users.some(user => user.id === draft.userId) && <option value={draft.userId}>指定用户 · {draft.userId}</option>}
           {users.data?.users.map((u) => (
             <option key={u.id} value={u.id}>
               {u.displayName} (@{u.username})
@@ -1043,8 +1080,8 @@ function ContentManager({ kind, initialFilters, navigate }: { kind: "mistakes" |
         <Loading error={error} retry={refresh} />
       ) : (
         <div className="ac-panel">
-          <div className="ac-scroll">
-            <table>
+          <div className="ac-scroll" role="region" aria-label={kind === "mistakes" ? "错题列表，可横向滚动" : "上传列表，可横向滚动"} tabIndex={0}>
+            <table aria-label={kind === "mistakes" ? "错题中心" : "上传批次"}>
               <thead>
                 <tr>
                   <th>{kind === "mistakes" ? "题干 / 知识点" : "上传文件"}</th>
@@ -1125,7 +1162,7 @@ function ContentManager({ kind, initialFilters, navigate }: { kind: "mistakes" |
             page={data.page}
             total={data.total}
             totalPages={data.totalPages}
-            change={setPage}
+            change={changePage}
           />
         </div>
       )}

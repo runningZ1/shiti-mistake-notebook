@@ -1,8 +1,9 @@
 "use client";
 
 import MathText from "./math-text";
+import "./study-tools.css";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, CheckCircle2, Download, FileText, Lightbulb, LoaderCircle, Plus, RotateCcw, Sparkles, X } from "lucide-react";
 import type { PracticeDetail, PracticeSummary } from "@/lib/practice-types";
 import { practiceFormatBlueprint, practiceFormatLabels, practiceKindLabels, kindForQuestion, validPracticeCount } from "@/lib/practice-blueprint";
@@ -55,6 +56,8 @@ export default function UnitPractice({ subjects, papers, weakPoints, initialSubj
   const [busy, setBusy] = useState<"generate" | "grade" | string | null>(null);
   const [error, setError] = useState("");
   const paperRef = useRef<HTMLElement>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (error) errorRef.current?.focus(); }, [error]);
   const suggestions = useMemo(() => {
     const counts = new Map<string, number>();
     for (const item of weakPoints) if (item.subject === subject) {
@@ -93,7 +96,10 @@ export default function UnitPractice({ subjects, papers, weakPoints, initialSubj
     setCustomPoint("");
   }
 
-  const scrollToPaper = () => window.setTimeout(() => paperRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  const scrollToPaper = () => window.setTimeout(() => {
+    paperRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    paperRef.current?.focus({ preventScroll: true });
+  }, 0);
 
   async function readJson(response: Response) {
     if (redirectIfUnauthorized(response)) return null;
@@ -106,8 +112,9 @@ export default function UnitPractice({ subjects, papers, weakPoints, initialSubj
   async function openPaper(id: string) {
     setBusy(id); setError("");
     try {
-      const data = await readJson(await fetch(`/api/practice-papers/${id}`));
-      if (!data?.paper) return;
+      const data = await readJson(await fetch(`/api/practice-papers/${encodeURIComponent(id)}`));
+      if (!data) return;
+      if (!data.paper) throw new Error("练习卷内容未返回，请重试。");
       const savedAnswers = data.paper.answers.length ? data.paper.answers : data.paper.questions.map(() => "");
       let draft: string[] | null = null;
       try {
@@ -132,7 +139,8 @@ export default function UnitPractice({ subjects, papers, weakPoints, initialSubj
     try {
       const response = await fetch("/api/practice-papers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subject: subject.trim(), unitName: unitName.trim(), gradeLevel: gradeLevel.trim(), count, focusPoints: selectedPoints }) });
       const data = await readJson(response);
-      if (!data?.paper) return;
+      if (!data) return;
+      if (!data.paper) throw new Error("练习卷内容未返回，请重试。");
       setPaper(data.paper); setAnswers(data.paper.questions.map(() => "")); setRetaking(false);
       onSaved(paperSummary(data.paper));
       scrollToPaper();
@@ -146,9 +154,10 @@ export default function UnitPractice({ subjects, papers, weakPoints, initialSubj
     if (!answers.some(answer => answer.trim())) { setError("请至少完成一题再提交批改。"); return; }
     setBusy("grade"); setError("");
     try {
-      const response = await fetch(`/api/practice-papers/${paper.id}/grade`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answers }) });
+      const response = await fetch(`/api/practice-papers/${encodeURIComponent(paper.id)}/grade`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answers }) });
       const data = await readJson(response);
-      if (!data?.paper) return;
+      if (!data) return;
+      if (!data.paper) throw new Error("批改结果未返回，请重试。");
       setPaper(data.paper); setAnswers(data.paper.answers); setRetaking(false);
       try { window.sessionStorage.removeItem(draftKey(paper.id)); } catch { /* Browser storage may be disabled. */ }
       onSaved(paperSummary(data.paper));
@@ -165,35 +174,55 @@ export default function UnitPractice({ subjects, papers, weakPoints, initialSubj
       try { window.sessionStorage.setItem(draftKey(paper.id), JSON.stringify(next)); } catch { /* Browser storage may be disabled. */ }
     }
   }
-  return <>
-    <section className="page-intro"><span className="section-kicker">UNIT PRACTICE</span><h1>单元练习卷</h1><p>先确认要练的知识点，再按基础、方法、易错辨析和应用出卷。可在线批改，也可下载 Word。</p></section>
-    {error && <div className="practice-error" role="alert">{error}</div>}
-    <section className="practice-create panel"><div className="panel-heading"><div><span className="section-kicker">CREATE A PAPER</span><h2>先定练什么，再出卷</h2><p>保留手动输入单元名称；知识点由你确认，避免把其他单元的错题混进来。</p></div><span className="heading-icon"><FileText size={23} /></span></div>
-      <div className="practice-form">
-        <label>科目<input value={subject} onChange={event => setSubject(event.target.value)} list="practice-subjects" maxLength={30} placeholder="如：数学" /><datalist id="practice-subjects">{subjects.map(item => <option key={item} value={item} />)}</datalist></label>
-        <label>单元名称<input value={unitName} onChange={event => setUnitName(event.target.value)} maxLength={80} placeholder="如：一元一次方程" /></label>
-        <label>年级（选填）<input value={gradeLevel} onChange={event => setGradeLevel(event.target.value)} maxLength={30} placeholder="如：七年级上册" /></label>
-        <label>题目数量（1–30 道）<input type="number" min={1} max={30} step={1} inputMode="numeric" value={countInput} onChange={event => { const next = event.target.value; if (next === "" || /^\d{1,2}$/.test(next)) { setCountInput(next); const parsed = Number(next); if (validPracticeCount(parsed)) setSelectedPoints(current => current.slice(0, Math.min(parsed, 4))); } }} aria-label="练习卷题目数量，1 到 30 道" /></label>
-      </div>
-      <div className="practice-focus"><div className="practice-focus-head"><strong>确认本次重点</strong><span>可选 {Math.min(validCount ? count : 0, 4)} 个；不选则覆盖本单元主要知识点</span></div>
-        {suggestions.length > 0 && <div className="practice-suggestions">{suggestions.map(item => <button key={item.name} type="button" className={selectedPoints.includes(item.name) ? "selected" : ""} onClick={() => togglePoint(item.name)} aria-pressed={selectedPoints.includes(item.name)}>{item.name}<small>{item.hits} 次错误</small></button>)}</div>}
-        <div className="practice-custom-point"><input value={customPoint} onChange={event => setCustomPoint(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addCustomPoint(); } }} maxLength={100} placeholder="也可以自己输入知识点" aria-label="添加知识点" /><button type="button" onClick={addCustomPoint}><Plus size={15} />添加</button></div>
-        {selectedPoints.length > 0 && <div className="practice-selected" aria-label="已确认知识点">{selectedPoints.map(point => <button type="button" key={point} onClick={() => togglePoint(point)} title="移除这个知识点">{point}<X size={13} /></button>)}</div>}
-      </div>
-      <div className="practice-blueprint" aria-label="本次出题结构"><strong>出题结构</strong><div>{formatCounts.map(label => <span key={label}>{label}</span>)}</div><small>包含基础概念、典型方法、易错辨析和应用；图表题使用卷内完整数据表。</small></div>
-      <button type="button" className="practice-primary" onClick={generate} disabled={busy !== null || trialExpired || aiReady === false || !validCount}>{busy === "generate" ? <><LoaderCircle size={17} className="spin" />正在分批出卷...</> : <><Sparkles size={17} />{trialExpired ? "体验已到期" : "生成练习卷"}</>}</button>
-      {validCount && count > 10 && <p className="service-note">题量较大时会分批生成和批改，请等待结果返回。</p>}
-      {aiReady === false && <p className="service-note">AI 服务尚未配置，暂时无法生成或批改练习卷。</p>}
-    </section>
-    {paper && <section className="practice-paper" ref={paperRef} aria-label="在线练习卷"><div className="practice-paper-head"><div><span className="section-kicker">PRACTICE PAPER</span><h2>{paper.subject} · {paper.unitName}</h2><p>{paper.gradeLevel || "单元练习"} · {paper.questionCount} 道题</p></div><a className="practice-word" href={busy === null ? `/api/practice-papers/${encodeURIComponent(paper.id)}/word` : undefined} aria-disabled={busy !== null}><Download size={16} />下载 Word 试卷</a></div>
-      {showGrading && <div className="practice-score" role="status"><CheckCircle2 size={20} /><span>批改完成：正确 {paper.correctCount} 道，错误 {paper.incorrectCount} 道{paper.uncertainCount ? `，待核对 ${paper.uncertainCount} 道` : ""}。</span><button type="button" onClick={() => { const blank = paper.questions.map(() => ""); setAnswers(blank); setRetaking(true); try { window.sessionStorage.setItem(draftKey(paper.id), JSON.stringify(blank)); } catch { /* Browser storage may be disabled. */ } }} disabled={trialExpired}><RotateCcw size={15} />重新作答</button></div>}
-      {showGrading && paper.wrongKnowledgePoints.length > 0 && <div className="practice-next"><strong>下一步先弄懂这些知识点</strong><div>{[...new Set(paper.wrongKnowledgePoints)].map(point => <button type="button" key={point} onClick={() => onReviewPoint(paper.subject, point)}>{point}<ArrowRight size={14} /></button>)}</div><p>先看概念与相关错题，再做一次 3 题小测；本次结果只说明这份卷的表现。</p></div>}
+  const answeredCount = answers.filter(answer => answer.trim()).length;
+  const aiUnavailable = aiReady !== true;
+  return <div className="study-tools practice-tool">
+    <section className="page-intro"><span className="section-kicker">UNIT PRACTICE</span><h1>单元练习卷</h1><p>确定范围、完成作答、查看批改。也可下载 Word，保留纸笔练习的习惯。</p></section>
+    {error && <div className="practice-error" role="alert" tabIndex={-1} ref={errorRef}>{error}</div>}
+    <nav className="tool-shortcuts" aria-label="练习卷页面导航"><a href="#practice-create">生成新练习</a><a href="#practice-history">历史练习 · {papers.length}</a>{paper && <a href="#practice-paper">当前练习</a>}</nav>
+    <div className="practice-workspace">
+      <section className="practice-create panel" id="practice-create" aria-labelledby="practice-create-title">
+        <div className="panel-heading"><div><span className="section-kicker">01 / SET THE SCOPE</span><h2 id="practice-create-title">生成一份单元练习</h2><p>先确认单元和知识点，让练习对应当前学习内容。</p></div><span className="heading-icon"><FileText size={22} /></span></div>
+        {trialExpired && <p className="tool-notice">免费体验已到期，可继续查看、作答和下载历史练习。生成与批改需联系管理员开通。</p>}
+        {aiUnavailable && <p className="tool-notice" role="status">{aiReady === null ? "正在确认 AI 服务状态…" : "AI 服务暂不可用，生成与批改暂时无法使用。"}</p>}
+        <form onSubmit={event => { event.preventDefault(); void generate(); }}>
+          <fieldset className="tool-fieldset" disabled={busy !== null}>
+            <legend className="tool-fieldset-title">练习范围</legend>
+            <div className="practice-form">
+              <label>科目 <span className="tool-required">必填</span><input required value={subject} onChange={event => { setSubject(event.target.value); setSelectedPoints([]); setCustomPoint(""); }} list="practice-subjects" maxLength={30} placeholder="如：数学" /><datalist id="practice-subjects">{subjects.map(item => <option key={item} value={item} />)}</datalist></label>
+              <label>单元名称 <span className="tool-required">必填</span><input required value={unitName} onChange={event => setUnitName(event.target.value)} maxLength={80} placeholder="如：一元一次方程" /></label>
+              <label>年级（选填）<input value={gradeLevel} onChange={event => setGradeLevel(event.target.value)} maxLength={30} placeholder="如：七年级上册" /></label>
+              <label>题目数量（1–30 道）<input type="number" required min={1} max={30} step={1} inputMode="numeric" value={countInput} aria-invalid={!validCount} onChange={event => { const next = event.target.value; if (next === "" || /^\d{1,2}$/.test(next)) { setCountInput(next); const parsed = Number(next); if (validPracticeCount(parsed)) setSelectedPoints(current => current.slice(0, Math.min(parsed, 4))); } }} /></label>
+            </div>
+            <section className="practice-focus" aria-labelledby="practice-focus-title"><div className="practice-focus-head"><strong id="practice-focus-title">本次重点（选填）</strong><span>已选 {selectedPoints.length}/{Math.min(validCount ? count : 0, 4)} 个</span></div><p className="tool-help">建议来自本科目的错误记录，请确认属于当前单元。不选则覆盖本单元主要知识点。</p>
+              {suggestions.length > 0 && <div className="practice-suggestions">{suggestions.map(item => <button key={item.name} type="button" className={selectedPoints.includes(item.name) ? "selected" : ""} onClick={() => togglePoint(item.name)} aria-pressed={selectedPoints.includes(item.name)}>{item.name}<small>{item.hits} 次错误</small></button>)}</div>}
+              <div className="practice-custom-point"><input value={customPoint} onChange={event => setCustomPoint(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addCustomPoint(); } }} maxLength={100} placeholder="输入一个知识点" aria-label="自定义知识点" /><button type="button" onClick={addCustomPoint} disabled={!customPoint.trim()}><Plus size={15} />添加</button></div>
+              {selectedPoints.length > 0 && <div className="practice-selected" aria-label="已确认知识点">{selectedPoints.map(point => <button type="button" key={point} onClick={() => togglePoint(point)} aria-label={`移除知识点：${point}`}>{point}<X size={14} /></button>)}</div>}
+            </section>
+            <div className="practice-blueprint" aria-label="本次出题结构"><strong>出题结构</strong>{validCount ? <div>{formatCounts.map(label => <span key={label}>{label}</span>)}</div> : <p className="tool-help">请填写 1 到 30 道题，查看出题结构。</p>}<small>题型随题量安排，覆盖基础、方法、易错辨析与应用；生成练习不会计为掌握记录。</small></div>
+            <div className="tool-form-footer"><button type="submit" className="practice-primary" disabled={busy !== null || trialExpired || aiUnavailable || !validCount}>{busy === "generate" ? <><LoaderCircle size={17} className="spin" />正在生成练习…</> : <><Sparkles size={17} />生成练习卷</>}</button><span>生成后可在线作答或下载</span></div>
+          </fieldset>
+        </form>
+        {busy === "generate" && <p className="tool-status" role="status"><LoaderCircle size={16} className="spin" />正在准备题目，请保留当前页面，完成后会自动显示练习卷。</p>}
+        {validCount && count > 10 && <p className="tool-help">题量较大时会分批生成和批改，请等待结果返回。</p>}
+      </section>
+      <aside className="practice-history" id="practice-history" aria-labelledby="practice-history-title"><div className="section-heading"><div><span className="section-kicker">SAVED PAPERS</span><h2 id="practice-history-title">历史练习</h2></div><span>{papers.length} 份</span></div><p className="tool-help">继续作答、查看批改或下载试卷。</p>{papers.length ? <div className="practice-history-list">{papers.map(item => <button type="button" key={item.id} className={paper?.id === item.id ? "active" : ""} aria-current={paper?.id === item.id ? "true" : undefined} onClick={() => openPaper(item.id)} disabled={busy !== null}><FileText size={19} /><span><strong>{item.subject} · {item.unitName}</strong><small>{new Date(item.createdAt).toLocaleDateString("zh-CN")} · {item.questionCount} 道题</small><small className="tool-history-state">{busy === item.id ? "正在打开…" : item.gradedAt ? `已批改 · 正确 ${item.correctCount} 道` : "待作答 / 待批改"}</small></span>{busy === item.id ? <LoaderCircle size={16} className="spin" /> : <ArrowRight size={16} />}</button>)}</div> : <div className="tool-empty"><FileText size={28} /><strong>还没有练习记录</strong><p>生成后的试卷会保存在这里，方便下次继续。</p></div>}</aside>
+    </div>
+    {paper && <section className="practice-paper" id="practice-paper" tabIndex={-1} ref={paperRef} aria-label="在线练习卷" aria-busy={busy === "grade"}><div className="practice-paper-head"><div><span className="section-kicker">02 / {showGrading ? "REVIEW YOUR ANSWERS" : "YOUR TURN"}</span><h2>{paper.subject} · {paper.unitName}</h2><p>{paper.gradeLevel || "单元练习"} · {paper.questionCount} 道题 · {showGrading ? "已批改" : `已作答 ${answeredCount}/${paper.questions.length} 道`}</p></div><a className="practice-word" href={busy === null ? `/api/practice-papers/${encodeURIComponent(paper.id)}/word` : undefined} aria-disabled={busy !== null} tabIndex={busy !== null ? -1 : undefined}><Download size={16} />下载 Word 试卷</a></div>
+      {!showGrading && <p className="tool-help">可先完成部分题目再批改。当前作答保存在本浏览器会话中；提交后的答案会保存到练习记录。</p>}
+      {showGrading && <div className="practice-score" role="status"><CheckCircle2 size={20} /><span>本次批改：正确 {paper.correctCount} 道，错误 {paper.incorrectCount} 道{paper.uncertainCount ? `，待核对 ${paper.uncertainCount} 道` : ""}。结果仅反映本次练习。</span><button type="button" onClick={() => { const blank = paper.questions.map(() => ""); setAnswers(blank); setRetaking(true); try { window.sessionStorage.setItem(draftKey(paper.id), JSON.stringify(blank)); } catch { /* Browser storage may be disabled. */ } }} disabled={busy !== null}><RotateCcw size={15} />重新作答</button></div>}
+      {showGrading && paper.wrongKnowledgePoints.length > 0 && <div className="practice-next"><strong>回到知识点，找出原因</strong><div>{[...new Set(paper.wrongKnowledgePoints)].map(point => <button type="button" key={point} onClick={() => onReviewPoint(paper.subject, point)}>{point}<ArrowRight size={14} /></button>)}</div><p>查看概念与相关错题后，再用小测验证理解。</p></div>}
       <div className="practice-questions">{paper.questions.map((item, index) => {
         const gradeItem = showGrading ? paper.grading[index] : null;
-        return <article className="practice-question" key={`${paper.id}-${index}`}><div className="practice-question-title"><span>{String(index + 1).padStart(2, "0")}</span><div><small>{item.format ? `${practiceFormatLabels[item.format]} · ` : ""}{practiceKindLabels[kindForQuestion(item.kind)]} · {item.knowledgePoint}</small><h3><MathText value={item.question} /></h3></div></div>{item.format === "chart" && item.table && <div className="practice-table-wrap"><table><thead><tr>{item.table.headers.map((cell, i) => <th key={i}><MathText value={cell} /></th>)}</tr></thead><tbody>{item.table.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex}><MathText value={cell} /></td>)}</tr>)}</tbody></table></div>}{item.format === "choice" && item.options?.length === 4 ? <fieldset className="practice-options" disabled={showGrading || busy === "grade"}><legend>选择一个答案</legend>{item.options.map((option, optionIndex) => { const letter = "ABCD"[optionIndex]; return <label key={letter}><input type="radio" name={`practice-answer-${paper.id}-${index}`} checked={(answers[index] || "").toUpperCase() === letter} onChange={() => updateAnswer(index, letter)} /><strong>{letter}.</strong><MathText value={option} /></label>; })}</fieldset> : <><label htmlFor={`practice-answer-${paper.id}-${index}`}>我的作答</label><textarea id={`practice-answer-${paper.id}-${index}`} value={answers[index] || ""} onChange={event => updateAnswer(index, event.target.value)} maxLength={2000} disabled={showGrading || busy === "grade"} placeholder={item.format === "fill" ? "填写空格中的答案" : "在这里写下答案或解题过程"} rows={item.format === "fill" ? 2 : 3} /></>}{gradeItem && <div className={`practice-feedback ${gradeItem.verdict}`}><strong>{gradeItem.verdict === "correct" ? "回答正确" : gradeItem.verdict === "incorrect" ? "需要订正" : "建议人工核对"}</strong><p><MathText value={gradeItem.comment} /></p><p><b>参考答案：</b><MathText value={gradeItem.answer} /></p><p><b>解析：</b><MathText value={gradeItem.explanation} /></p></div>}</article>;
+        return <article className="practice-question" key={`${paper.id}-${index}`}>
+          <div className="practice-question-title"><span>{String(index + 1).padStart(2, "0")}</span><div><small>{item.format ? `${practiceFormatLabels[item.format]} · ` : ""}{practiceKindLabels[kindForQuestion(item.kind)]} · {item.knowledgePoint}</small><h3><MathText value={item.question} /></h3></div></div>
+          {item.format === "chart" && item.table && <div className="practice-table-wrap" role="region" aria-label={`第 ${index + 1} 题数据表，可横向滚动`} tabIndex={0}><table><thead><tr>{item.table.headers.map((cell, i) => <th scope="col" key={i}><MathText value={cell} /></th>)}</tr></thead><tbody>{item.table.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex}><MathText value={cell} /></td>)}</tr>)}</tbody></table></div>}
+          {item.format === "choice" && item.options?.length === 4 ? <fieldset className="practice-options" disabled={showGrading || busy !== null}><legend>第 {index + 1} 题：选择一个答案</legend>{item.options.map((option, optionIndex) => { const letter = "ABCD"[optionIndex]; return <label key={letter}><input type="radio" name={`practice-answer-${paper.id}-${index}`} checked={(answers[index] || "").toUpperCase() === letter} onChange={() => updateAnswer(index, letter)} /><strong>{letter}.</strong><MathText value={option} /></label>; })}</fieldset> : <><label htmlFor={`practice-answer-${paper.id}-${index}`}>第 {index + 1} 题：我的作答</label><textarea id={`practice-answer-${paper.id}-${index}`} value={answers[index] || ""} onChange={event => updateAnswer(index, event.target.value)} maxLength={2000} disabled={showGrading || busy !== null} placeholder={item.format === "fill" ? "填写空格中的答案" : "在这里写下答案或解题过程"} rows={item.format === "fill" ? 2 : 3} /></>}
+          {gradeItem && <div className={`practice-feedback ${gradeItem.verdict}`}><strong>{gradeItem.verdict === "correct" ? "回答正确" : gradeItem.verdict === "incorrect" ? "需要订正" : "建议人工核对"}</strong><p><MathText value={gradeItem.comment} /></p><p><b>参考答案：</b><MathText value={gradeItem.answer} /></p><p><b>解析：</b><MathText value={gradeItem.explanation} /></p></div>}
+        </article>;
       })}</div>
-      {!showGrading && <div className="practice-submit"><p><Lightbulb size={16} />提交后由 AI 逐题批改；答案和解析仅供学习参考。</p><button type="button" className="practice-primary" onClick={grade} disabled={busy !== null || trialExpired || aiReady === false}>{busy === "grade" ? <><LoaderCircle size={17} className="spin" />正在分批批改...</> : <>提交批改 <ArrowRight size={16} /></>}</button></div>}
+      {!showGrading && <div className="practice-submit"><div><strong>已作答 {answeredCount}/{paper.questions.length} 道</strong><p><Lightbulb size={16} />AI 逐题批改，答案与解析请结合课本和老师讲解核对。</p>{(trialExpired || aiUnavailable) && <p>{trialExpired ? "体验已到期，开通后可提交批改。" : aiReady === null ? "正在确认 AI 服务状态…" : "AI 服务暂不可用，暂时无法批改。"}</p>}</div><button type="button" className="practice-primary" onClick={grade} disabled={busy !== null || trialExpired || aiUnavailable || !answeredCount}>{busy === "grade" ? <><LoaderCircle size={17} className="spin" />正在批改…</> : <>提交批改 <ArrowRight size={16} /></>}</button></div>}
+      {busy === "grade" && <p className="tool-status" role="status"><LoaderCircle size={16} className="spin" />正在逐题批改，请保留当前页面。</p>}
     </section>}
-    <section className="practice-history"><div className="section-heading"><div><span className="section-kicker">SAVED PAPERS</span><h2>已生成的练习卷</h2></div><span>{papers.length} 份</span></div>{papers.length ? <div className="practice-history-list">{papers.map(item => <button type="button" key={item.id} className={paper?.id === item.id ? "active" : ""} onClick={() => openPaper(item.id)} disabled={busy !== null}><FileText size={20} /><span><strong>{item.subject} · {item.unitName}</strong><small>{new Date(item.createdAt).toLocaleDateString("zh-CN")} · {item.questionCount} 道题 · {item.gradedAt ? `正确 ${item.correctCount} 道` : "尚未批改"}</small></span>{busy === item.id ? <LoaderCircle size={16} className="spin" /> : <ArrowRight size={16} />}</button>)}</div> : <div className="empty-recent">还没有练习卷。填写单元名称后即可生成。</div>}</section>
-  </>;
+  </div>;
 }

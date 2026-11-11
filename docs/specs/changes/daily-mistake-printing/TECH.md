@@ -9,7 +9,7 @@ created: "2026年11月11日 20:21:19（北京时间）"
 **文档类型：** 技术方案
 **需求类型：** 迭代型
 **对应 PRD：** [每日错题整理与剪贴打印 v0.1.0](../daily-mistake-printing.md)
-**版本：** v0.1.0 · **创建时间：** 2026年11月11日 20:21:19（北京时间） · **状态：** 核心范围本地实现及可用资料验证完成，未发布；纸面效果待验收
+**版本：** v0.1.0 · **创建时间：** 2026年11月11日 20:21:19（北京时间） · **状态：** 核心范围已正式发布，数据保留与线上验证通过；实体打印效果待验收
 
 ## 修改记录
 
@@ -24,7 +24,7 @@ created: "2026年11月11日 20:21:19（北京时间）"
 - 主要数据增量：`mistakes.reflection`；日期按既有`created_at`换算北京时间，不增加作业日期。
 - 扩展已有列表、单题更新、单题/批量Word路由；网页转换与服务端共用模板选项。
 - 核心风险：UTC归日、未保存反思、浏览器/服务端导出差异、原图不完整、跨账号访问。
-- 已在独立PostgreSQL schema的真实资料副本及Workers预览进行验证；已通过项目类型、Word包检查和构建，详细结果见[交付记录](../../../delivery/features/daily-mistake-printing.md)。
+- 隔离真实资料、生产Workers HTTPS与实际浏览器验证均已执行；数据保留结果及边界见[生产发布记录](../../../delivery/features/daily-mistake-printing-release-20261111.md)。
 
 ## 一、概述与现状
 
@@ -106,7 +106,7 @@ UI持有`selectedMistakeIds`、`reflectionDraft`、保存状态与`printOptions`
 
 ## 十二、数据设计
 
-正式迁移为`db/migrations/0005_mistake_reflection.sql`。增加`mistakes.reflection text NOT NULL DEFAULT ''`及`char_length(reflection) <= 1000`检查约束，Drizzle schema、0005快照与journal同步。API用码点计数，不使用UTF-16的`string.length`判定1000个字符。迁移与校验和重复执行仅在独立schema验证通过，原库尚未迁移。
+正式迁移为`db/migrations/0005_mistake_reflection.sql`。增加`mistakes.reflection text NOT NULL DEFAULT ''`及`char_length(reflection) <= 1000`检查约束，Drizzle schema、0005快照与journal同步。API用码点计数，不使用UTF-16的`string.length`判定1000个字符。迁移与校验和重复执行先在独立schema验证，再经用户授权随生产部署执行；既有真实内容保留，原本地数据库未在发布中迁移。
 
 
 历史反思全部为空，不从AI解析回填。不新增日期表、打印历史表、档案字段或会员表；保存反思不修改`created_at`，防止题目跳日。新增列为向后兼容数据扩展，账号删除继续依赖现有级联关系。
@@ -168,7 +168,7 @@ PATCH是设置字段值，重复相同请求只覆盖同一题字段，不新增
 
 ## 二十三、部署与上线
 
-批准后先备份真实PostgreSQL与对象存储，再追加和执行迁移，核对存量数据、关系和原图。仅在用户另行授权发布后按既有部署流程执行；本稿不授权提交或上线。旧程序忽略新增反思列，新程序要求迁移已完成；回退应用时保留列和用户内容，不删除反思来回滚。
+生产发布前已备份真实PostgreSQL、对象存储、配置及旧构建，按既有`deploy.sh`执行快进拉取、构建、迁移和重启。0004、0005已上线，账号和业务原记录、关系、图片键及97个对象内容文件均核对保留。旧程序忽略新增列，新程序依赖已完成迁移；后续回退应用也应保留新增列及用户反思，不删除用户内容来回滚。[生产记录](../../../delivery/features/daily-mistake-printing-release-20261111.md)保存确切提交、备份和证据。
 
 文档随实施同步；现有`0004_question_bounds.sql`的上线先决条件仍须满足。Windows构建前停止本次启动的预览进程，不终止其他任务进程。
 
@@ -193,4 +193,4 @@ PATCH是设置字段值，重复相同请求只覆盖同一题字段，不新增
 
 ## Documentation Sync
 
-本稿与PRD对应同一v0.1.0核心范围；用户已授权按推荐方案开发，接口、迁移、工作台与生成器已实现。日期筛选复用客户端完整列表，同时API提供相同口径过滤；导出前重新校验当前记录，服务端附件在独立下载框架中请求，失败返回时保持页面和设置。共享打印选项已同时接入两种路径；当前数据库、运行验证与剩余实测边界见[交付记录](../../../delivery/features/daily-mistake-printing.md)。本次未发布，不更新已发布CHANGELOG。
+本稿与PRD对应同一v0.1.0核心范围，接口、迁移、工作台与生成器已实现并按用户授权发布。日期筛选复用客户端完整列表，API提供相同口径过滤；导出前核对当前记录，原生附件在独立下载框架中请求以保留工作台。两种路径共用打印选项。README、导航、交付记录与CHANGELOG同步，生产数据保留和实体打印限制以[发布记录](../../../delivery/features/daily-mistake-printing-release-20261111.md)为准。

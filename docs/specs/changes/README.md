@@ -10,4 +10,4 @@
 
 - [管理员小额支付测试页](alipay-payment/ADMIN-TEST.md)：支持一分钱与指定金额，管理员专用、独立开关，测试收款不增加会员天数。
 
-- [每日错题整理与剪贴打印](daily-mistake-printing.md)：v0.1.0，按用户授权完成按天汇总、本人错因、剪贴模板与打印设置的本地开发。[技术方案](daily-mistake-printing/TECH.md)与[开发验收记录](../../delivery/features/daily-mistake-printing.md)列出契约、已执行验证与真机/纸面限制。记录时间为2026年11月11日 21:23:18（北京时间）；隔离验证已结束并清理，未迁移原库、未发布。多孩与收费仍为独立待决项。
+- [每日错题整理与剪贴打印](daily-mistake-printing.md)：v0.1.0核心范围已于2026年11月11日 21:48:58（北京时间）发布。[生产发布记录](../../delivery/features/daily-mistake-printing-release-20261111.md)包含备份、正式迁移、数据逐记录保留、97个对象内容校验及真实两题合并下载验收；[技术方案](daily-mistake-printing/TECH.md)和[开发验收](../../delivery/features/daily-mistake-printing.md)保留实现依据。多孩与收费仍为独立待决项，实体打印与超大批量保留实测边界。

@@ -19,3 +19,5 @@ created: 2026-10-18T11:00:00Z
 实现：lib/mistake-docx.ts 生成标准 OOXML ZIP；`/api/mistakes/[id]/word` 在验证当前账号后返回带 `Content-Disposition: attachment` 的 `.docx`，页面使用真实链接下载，以避免部分手机浏览器在临时 `blob:` 链接上持续加载。单元练习卷的 Word 下载也直接使用已有文件接口。无依赖或数据库结构变更。
 
 验证：node scripts/check-mistake-docx.mjs 使用独立 ZIP/CRC/XML 解析验证文件及特殊字符、长英文、无衍生题、分页/页码、关系文件；python-docx 成功打开样例。本地临时账号经 HTTP 成功下载错题 `.docx`，确认状态码、文件签名、类型和附件响应头，测试数据已清理。华为浏览器真机下载仍需用户在更新后的站点验证。
+
+后续扩展：2026年11月11日 21:48:58（北京时间）上线的[每日错题整理与剪贴打印 v0.1.0](daily-mistake-printing.md)增加本人错因及可选剪贴模板，无选项的原练习单契约保留；生产与数据保留证据见[发布记录](../../delivery/features/daily-mistake-printing-release-20261111.md)。

@@ -5,6 +5,9 @@ import { createPortal } from "react-dom";
 import { makeMistakesDocx, mistakesDocxFilename } from "@/lib/mistake-docx";
 import { isTrialExpired, accessEndsAt } from "@/lib/trial";
 import type { PracticeSummary } from "@/lib/practice-types";
+import { beijingDate, isCalendarDate } from "@/lib/mistake-dates";
+import { pastePrintOptions, worksheetPrintOptions, printOptionsParams, type MistakePrintOptions } from "@/lib/mistake-print-options";
+import { ReflectionEditor, PrintSettings, type ReflectionActions, type ReflectionDraft } from "./mistake-printing";
 import KnowledgeMap from "./knowledge-map";
 import UnitPractice from "./unit-practice";
 import EssayAnalysis from "./essay-analysis";
@@ -18,6 +21,7 @@ type Mistake = {
   correctAnswer: string; reasoning: string; knowledgePoint: string; pageNumber: number;
   sourceName: string; similarQuestions: Similar[]; createdAt: string;
   questionBounds?: number[];
+  reflection?: string;
 };
 type GradedQuestion = { pageNumber: number; questionLabel: string; verdict: "correct" | "incorrect" | "uncertain"; comment: string };
 type Analysis = { subject: string; summary: string; uncertainNote: string; gradingMode: "marked" | "unmarked" | "mixed"; grading: GradedQuestion[]; mistakes: Mistake[] };
@@ -33,7 +37,7 @@ const analysisTips = [
 ];
 
 const subjectColors: Record<string, string> = { 数学: "lavender", 语文: "coral", 英语: "mint", 物理: "blue", 化学: "amber", 生物: "green", 历史: "sand", 地理: "teal", 政治: "rose" };
-const formatDate = (date: string) => new Date(date).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
+const formatDate = (date: string) => new Date(date).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Shanghai" });
 
 /**
  * 会话过期时接口返回 401，把用户送回登录页，而不是让他停在空页面上发呆。
@@ -133,17 +137,18 @@ function BatchToolbar({ items, allItems, selectedIds, count, onCountChange, onTo
     <strong>已选 {chosen.length} 道{chosen.length > visibleChosen.length ? `（当前列表 ${visibleChosen.length} 道）` : ""}</strong>
     <label className="batch-similar-count">每道生成 <input type="number" min="1" max="5" step="1" inputMode="numeric" value={count} onChange={event => { if (/^[1-5]?$/.test(event.target.value)) onCountChange(event.target.value); }} aria-label="每道错题生成类似题数量，1 到 5 道" /> 题</label>
     <button type="button" onClick={() => onGenerate(chosen, Number(count))} disabled={busy || trialExpired || chosen.length < 2 || chosen.length > 10 || !/^[1-5]$/.test(count)} title={chosen.length > 10 ? "批量生成每次最多选择 10 道错题" : trialExpired ? "体验已到期" : undefined}><Sparkles size={15} />批量举一反三</button>
-    <button type="button" onClick={() => onExport(chosen)} disabled={busy || chosen.length < 2}><FileDown size={15} />合并生成 Word</button>
+    <button type="button" onClick={() => onExport(chosen)} disabled={busy || !chosen.length}><FileDown size={15} />整理与打印</button>
     {selectedIds.length > 0 && <button type="button" className="batch-clear" onClick={onClear} disabled={busy}>清空选择</button>}
     {(progress || notice) && <span className="batch-status" role="status">{progress || notice}</span>}
     {chosen.length > 10 && <small>批量举一反三每次最多选 10 道；合并 Word 不受此限制。</small>}
   </div>;
 }
 
-function MistakeCard({ item, onSimilar, onExport, onDelete, onSelect, selectedForBatch, batchBusy, busy, exportingWord, trialExpired, showDelete = false, compact = false, onViewPhoto }: {
+function MistakeCard({ item, onSimilar, onExport, onDelete, onSelect, selectedForBatch, batchBusy, busy, exportingWord, trialExpired, showDelete = false, compact = false, onViewPhoto, reflections }: {
   item: Mistake; onSimilar: (id: string, count: number) => void; onExport: (item: Mistake) => void; onDelete: (id: string) => void;
   onSelect: (id: string) => void; selectedForBatch: boolean; batchBusy: boolean; busy: boolean; exportingWord: boolean; trialExpired: boolean; showDelete?: boolean; compact?: boolean;
   onViewPhoto?: (url: string, title: string) => void;
+  reflections: ReflectionActions;
 }) {
   const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -152,6 +157,8 @@ function MistakeCard({ item, onSimilar, onExport, onDelete, onSelect, selectedFo
   const openButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const reflectionsRef = useRef(reflections);
+  useEffect(() => { reflectionsRef.current = reflections; }, [reflections]);
   useEffect(() => {
     if (!compact || !detailsOpen) return;
     const previousOverflow = document.body.style.overflow;
@@ -159,7 +166,7 @@ function MistakeCard({ item, onSimilar, onExport, onDelete, onSelect, selectedFo
     document.body.style.overflow = "hidden";
     closeButtonRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { setDetailsOpen(false); return; }
+      if (event.key === "Escape") { if (reflectionsRef.current.canClose(item.id)) setDetailsOpen(false); return; }
       if (event.key !== "Tab") return;
       const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]') || [])];
       if (!focusable.length) return;
@@ -168,7 +175,7 @@ function MistakeCard({ item, onSimilar, onExport, onDelete, onSelect, selectedFo
     };
     document.addEventListener("keydown", onKeyDown);
     return () => { document.removeEventListener("keydown", onKeyDown); document.body.style.overflow = previousOverflow; trigger?.focus(); };
-  }, [compact, detailsOpen]);
+  }, [compact, detailsOpen, item.id]);
   return <article className={`question-card${compact ? " notebook-card" : ""}${detailsOpen ? " is-expanded" : ""}`}>
     <label className="mistake-select"><input type="checkbox" checked={selectedForBatch} onChange={() => onSelect(item.id)} disabled={batchBusy} />{selectedForBatch ? "已加入批量操作" : "选中这道错题"}</label>
     <div className="question-top">
@@ -205,10 +212,11 @@ function MistakeCard({ item, onSimilar, onExport, onDelete, onSelect, selectedFo
     {!compact && <div className="notebook-card-details">
       <div className="answer-grid"><div className="answer-box wrong"><span className="answer-label">我的答案</span><p><MathText value={item.incorrectAnswer || "图片中未能读清"} /></p></div><div className="answer-box correct"><span className="answer-label">正确答案</span><p><MathText value={item.correctAnswer} /></p></div></div>
       <div className="reasoning"><div className="reasoning-heading"><Lightbulb size={18} /><strong>解题思路</strong></div><p><MathText value={item.reasoning} /></p></div>
+      <ReflectionEditor id={item.id} saved={item.reflection || ""} actions={reflections} />
       <div className="question-footer">{!compact && <span className="source-line"><FileImage size={14} />{item.sourceName} · 第 {item.pageNumber} 页</span>}<div className="question-actions"><button className="export-button" onClick={() => onExport(item)} disabled={exportingWord}>{exportingWord ? <LoaderCircle size={15} className="spin" /> : <FileDown size={15} />}{exportingWord ? "正在生成…" : "生成 Word"}</button>{showDelete && <button className="icon-action" title="移除这道错题" onClick={() => onDelete(item.id)}><Trash2 size={16} /></button>}<div className="similar-request"><label htmlFor={`similar-count-${item.id}`}>再给我出 <input id={`similar-count-${item.id}`} className="similar-count" type="number" min="1" max="5" step="1" inputMode="numeric" value={similarCount} onChange={event => { if (/^[1-5]?$/.test(event.target.value)) setSimilarCount(event.target.value); }} aria-label="类似题数量，1 到 5 道" /> 道类似题目</label><button className="similar-button" onClick={() => onSimilar(item.id, Number(similarCount))} disabled={trialExpired || batchBusy || busy || !/^[1-5]$/.test(similarCount)} title={trialExpired ? "试用已到期，请联系管理员开通" : undefined}>{busy ? <LoaderCircle size={16} className="spin" /> : <Sparkles size={16} />}{trialExpired ? "体验已到期" : "生成"}</button></div>{item.similarQuestions.length > 0 && <button className="similar-toggle" onClick={() => setUserExpanded(!answersOpen)} aria-expanded={answersOpen}>{answersOpen ? "收起" : "查看"}已生成的 {item.similarQuestions.length} 道题<ChevronDown size={15} className={answersOpen ? "turn" : ""} /></button>}</div></div>
       {item.similarQuestions.length > 0 && answersOpen && <div className="similar-list"><div className="similar-title"><Sparkles size={17} />举一反三 · {item.similarQuestions.length} 道练习</div>{item.similarQuestions.map((similar, index) => <SimilarExercise item={similar} index={index} key={index} />)}</div>}
     </div>}
-    {compact && detailsOpen && createPortal(<div className="notebook-detail-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setDetailsOpen(false); }}><div ref={dialogRef} className="notebook-detail-panel" role="dialog" aria-modal="true" aria-label="错题详情"><div className="notebook-detail-header"><strong>错题详情</strong><button ref={closeButtonRef} type="button" onClick={() => setDetailsOpen(false)} aria-label="关闭错题详情"><X size={20} /></button></div><MistakeCard item={item} onSimilar={onSimilar} onExport={onExport} onDelete={id => { setDetailsOpen(false); onDelete(id); }} onSelect={onSelect} selectedForBatch={selectedForBatch} batchBusy={batchBusy} busy={busy} exportingWord={exportingWord} trialExpired={trialExpired} showDelete={showDelete} onViewPhoto={onViewPhoto} /></div></div>, document.body)}
+    {compact && detailsOpen && createPortal(<div className="notebook-detail-backdrop" onMouseDown={event => { if (event.target === event.currentTarget && reflections.canClose(item.id)) setDetailsOpen(false); }}><div ref={dialogRef} className="notebook-detail-panel" role="dialog" aria-modal="true" aria-label="错题详情"><div className="notebook-detail-header"><strong>错题详情</strong><button ref={closeButtonRef} type="button" onClick={() => { if (reflections.canClose(item.id)) setDetailsOpen(false); }} aria-label="关闭错题详情"><X size={20} /></button></div><MistakeCard item={item} onSimilar={onSimilar} onExport={onExport} onDelete={id => { if (reflections.canClose(item.id)) { setDetailsOpen(false); onDelete(id); } }} onSelect={onSelect} selectedForBatch={selectedForBatch} batchBusy={batchBusy} busy={busy} exportingWord={exportingWord} trialExpired={trialExpired} showDelete={showDelete} onViewPhoto={onViewPhoto} reflections={reflections} /></div></div>, document.body)}
   </article>;
 }
 
@@ -237,6 +245,22 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
   const [query, setQuery] = useState("");
   const [subject, setSubject] = useState("全部科目");
   const [month, setMonth] = useState("");
+  const [dates, setDates] = useState({ date: "", dateFrom: "", dateTo: "" });
+  const [dateMode, setDateMode] = useState<"day" | "range">("day");
+  const [dateInput, setDateInput] = useState("");
+  const [dateFromInput, setDateFromInput] = useState("");
+  const [dateToInput, setDateToInput] = useState("");
+  const [dateError, setDateError] = useState("");
+  const [listError, setListError] = useState("");
+  const [drafts, setDrafts] = useState<Record<string, ReflectionDraft>>({});
+  const [printIds, setPrintIds] = useState<string[] | null>(null);
+  const [printOptions, setPrintOptions] = useState<MistakePrintOptions>({ ...pastePrintOptions });
+  const [printError, setPrintError] = useState("");
+  const [printProgress, setPrintProgress] = useState("");
+  const [savingPrintDrafts, setSavingPrintDrafts] = useState(false);
+  const printOptionsChosen = useRef(false);
+  const filterKey = useRef("");
+  const serverDownload = useRef<HTMLIFrameElement | null>(null);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [practiceSubject, setPracticeSubject] = useState("");
   const [practiceUnit, setPracticeUnit] = useState("");
@@ -253,6 +277,7 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
   const lightboxCloseRef = useRef<HTMLButtonElement>(null);
 
   function setTab(next: Tab) {
+    if (next !== tab && !discardBeforeLeaving()) return;
     setActiveTab(next);
     setMobileMenu(false);
     if (typeof window !== "undefined") {
@@ -271,7 +296,15 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
       setActiveTab(view === "notebook" || view === "knowledge" || view === "practice" || view === "essay" ? view : "home");
       setQuery(params.get("q") || "");
       setSubject(params.get("subject") || "全部科目");
-      setMonth(params.get("month") || "");
+      const date = params.get("date") || "";
+      const dateFrom = params.get("dateFrom") || "";
+      const dateTo = params.get("dateTo") || "";
+      const valid = date ? isCalendarDate(date) && !dateFrom && !dateTo : (!dateFrom && !dateTo) || (isCalendarDate(dateFrom) && isCalendarDate(dateTo) && dateFrom <= dateTo);
+      const restored = valid ? { date, dateFrom, dateTo } : { date: "", dateFrom: "", dateTo: "" };
+      setDates(restored); setDateInput(restored.date); setDateFromInput(restored.dateFrom); setDateToInput(restored.dateTo);
+      setDateMode(restored.dateFrom ? "range" : "day");
+      setDateError(valid ? "" : "链接中的日期无效，请重新选择日期范围。");
+      setMonth(valid && (date || dateFrom) ? "" : params.get("month") || "");
       setMobileMenu(false);
     };
     restore();
@@ -282,15 +315,15 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
   useEffect(() => {
     if (!urlReady.current) { urlReady.current = true; return; }
     const url = new URL(window.location.href);
-    for (const [key, value] of [["q", query], ["subject", subject === "全部科目" ? "" : subject], ["month", month]]) {
+    for (const [key, value] of [["q", query], ["subject", subject === "全部科目" ? "" : subject], ["month", month], ["date", dates.date], ["dateFrom", dates.dateFrom], ["dateTo", dates.dateTo]]) {
       if (value) url.searchParams.set(key, value); else url.searchParams.delete(key);
     }
     window.history.replaceState(null, "", url);
-  }, [query, subject, month]);
+  }, [query, subject, month, dates]);
 
   useEffect(() => {
     fetch("/api/status").then(r => r.json() as Promise<{ aiConfigured: boolean }>).then(data => setAiReady(Boolean(data.aiConfigured))).catch(() => setAiReady(false));
-    fetch("/api/mistakes").then(r => { if (redirectIfUnauthorized(r)) return null; if (!r.ok) throw new Error("错题本加载失败"); return r.json() as Promise<{ mistakes?: Mistake[] }>; }).then(data => { if (data && Array.isArray(data.mistakes)) setMistakes(data.mistakes); }).catch(() => setError("错题本加载失败，请刷新页面重试")).finally(() => setLoadingList(false));
+    void loadMistakes();
     fetch("/api/practice-papers").then(r => { if (redirectIfUnauthorized(r)) return null; if (!r.ok) throw new Error("练习卷列表加载失败"); return r.json() as Promise<{ papers?: PracticeSummary[] }>; }).then(data => { if (data && Array.isArray(data.papers)) setPapers(data.papers); }).catch(() => setError("练习卷列表加载失败，请刷新页面重试"));
   }, []);
 
@@ -301,6 +334,7 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
   }, [selected]);
   useEffect(() => () => { for (const url of previewUrls.current) URL.revokeObjectURL(url); }, []);
   useEffect(() => () => { if (exportFile) URL.revokeObjectURL(exportFile.url); }, [exportFile]);
+  useEffect(() => () => { serverDownload.current?.remove(); }, []);
   useEffect(() => {
     if (!uploading) return;
     const timer = window.setInterval(() => setTipIndex(current => (current + 1) % analysisTips.length), 5000);
@@ -332,13 +366,115 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
   }, [mobileMenu]);
 
   const subjects = useMemo(() => [...new Set(mistakes.map(item => item.subject))], [mistakes]);
-  const filtered = useMemo(() => mistakes.filter(item => (subject === "全部科目" || item.subject === subject) && (!month || item.createdAt.slice(0, 7) === month) && (!query || `${item.question} ${item.knowledgePoint} ${item.sourceName}`.toLowerCase().includes(query.toLowerCase()))), [mistakes, subject, month, query]);
+  const filtered = useMemo(() => mistakes.filter(item => {
+    const day = beijingDate(item.createdAt);
+    return (subject === "全部科目" || item.subject === subject) && (!month || day.slice(0, 7) === month) && (!dates.date || day === dates.date) && (!dates.dateFrom || (day >= dates.dateFrom && day <= dates.dateTo)) && (!query || `${item.question} ${item.knowledgePoint} ${item.sourceName}`.toLowerCase().includes(query.toLowerCase()));
+  }).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.uploadId.localeCompare(b.uploadId) || a.pageNumber - b.pageNumber || a.id.localeCompare(b.id)), [mistakes, subject, month, dates, query]);
   const groups = useMemo(() => {
     const result: Record<string, Mistake[]> = {};
-    for (const item of filtered) (result[item.createdAt.slice(0, 10)] ||= []).push(item);
+    for (const item of filtered) (result[beijingDate(item.createdAt)] ||= []).push(item);
     return Object.entries(result);
   }, [filtered]);
   const resultMistakes = analysis?.mistakes.map(item => mistakes.find(saved => saved.id === item.id) || item) || [];
+  const printItems = (printIds || []).map(id => mistakes.find(item => item.id === id)).filter((item): item is Mistake => Boolean(item));
+  const unsavedPrintItems = printItems.filter(item => drafts[item.id] && drafts[item.id].value !== (item.reflection || ""));
+
+  useEffect(() => {
+    const key = JSON.stringify([query, subject, month, dates]);
+    if (filterKey.current && filterKey.current !== key) {
+      if (selectedMistakeIds.length) setBatchNotice("筛选条件已更改，已清空原来的选题。");
+      setSelectedMistakeIds([]);
+    }
+    filterKey.current = key;
+  }, [query, subject, month, dates, selectedMistakeIds.length]);
+
+  useEffect(() => {
+    const dirty = Object.entries(drafts).some(([id, draft]) => draft.value !== (mistakes.find(item => item.id === id)?.reflection || ""));
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [drafts, mistakes]);
+
+  async function loadMistakes() {
+    setLoadingList(true); setListError("");
+    try {
+      const response = await fetch("/api/mistakes", { cache: "no-store" });
+      if (redirectIfUnauthorized(response)) return;
+      const data = await response.json() as { mistakes?: Mistake[]; error?: string };
+      if (!response.ok || !Array.isArray(data.mistakes)) throw new Error(data.error || "错题本加载失败");
+      setMistakes(data.mistakes);
+    } catch (cause) { setListError(cause instanceof Error ? cause.message : "错题本加载失败，请重试"); }
+    finally { setLoadingList(false); }
+  }
+
+  function discardDraft(id: string) {
+    setDrafts(current => { const next = { ...current }; delete next[id]; return next; });
+  }
+
+  function canCloseReflection(id: string) {
+    const draft = drafts[id];
+    if (draft?.saving) return false;
+    const saved = mistakes.find(item => item.id === id)?.reflection || "";
+    if (draft && draft.value !== saved) {
+      if (!window.confirm("这道题的错因还没有保存。确定放弃更改并关闭吗？")) return false;
+      discardDraft(id);
+    }
+    return true;
+  }
+
+  function discardBeforeLeaving() {
+    if (Object.values(drafts).some(draft => draft.saving)) return false;
+    if (!Object.entries(drafts).some(([id, draft]) => draft.value !== (mistakes.find(item => item.id === id)?.reflection || ""))) return true;
+    if (!window.confirm("还有未保存的错因。确定放弃更改并离开吗？")) return false;
+    setDrafts({}); return true;
+  }
+
+  async function saveReflection(id: string): Promise<boolean> {
+    const draft = drafts[id];
+    if (!draft || draft.saving) return !draft;
+    const value = draft.value.trim();
+    if (Array.from(value).length > 1000) { setDrafts(current => ({ ...current, [id]: { ...draft, error: "最多填写 1000 个字符" } })); return false; }
+    setDrafts(current => ({ ...current, [id]: { ...draft, saving: true, error: "" } }));
+    try {
+      const response = await fetch(`/api/mistakes/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reflection: value }) });
+      if (redirectIfUnauthorized(response)) return false;
+      const data = await response.json() as { mistake?: Mistake; error?: string };
+      if (!response.ok || !data.mistake) throw new Error(data.error || "错因保存失败，请重试");
+      const saved = data.mistake;
+      setMistakes(current => current.map(item => item.id === id ? saved : item));
+      setAnalysis(current => current ? { ...current, mistakes: current.mistakes.map(item => item.id === id ? saved : item) } : current);
+      discardDraft(id); return true;
+    } catch (cause) { setDrafts(current => ({ ...current, [id]: { ...draft, saving: false, error: cause instanceof Error ? cause.message : "错因保存失败，请重试" } })); return false; }
+  }
+
+  const reflections: ReflectionActions = {
+    drafts, change: (id, value) => setDrafts(current => ({ ...current, [id]: { value, saving: false, error: "" } })),
+    save: saveReflection, discard: discardDraft, canClose: canCloseReflection,
+  };
+
+  function applyDates(today = false) {
+    const date = today ? beijingDate(new Date()) : dateMode === "day" ? dateInput : "";
+    const dateFrom = today || dateMode === "day" ? "" : dateFromInput;
+    const dateTo = today || dateMode === "day" ? "" : dateToInput;
+    if (date ? !isCalendarDate(date) : !isCalendarDate(dateFrom) || !isCalendarDate(dateTo) || dateFrom > dateTo) { setDateError("请检查日期范围"); return; }
+    setDates({ date, dateFrom, dateTo }); setMonth(""); setDateError("");
+    if (today) { setDateMode("day"); setDateInput(date); setTab("notebook"); }
+  }
+
+  function clearDates() { setDates({ date: "", dateFrom: "", dateTo: "" }); setDateInput(""); setDateFromInput(""); setDateToInput(""); setDateError(""); }
+
+  function openPrintSettings(items: Mistake[], template: "worksheet" | "paste" = "paste") {
+    if (!items.length || exportingWord) return;
+    if (!printOptionsChosen.current) setPrintOptions({ ...(template === "paste" ? pastePrintOptions : worksheetPrintOptions) });
+    setPrintIds(items.map(item => item.id)); setPrintError(""); setPrintProgress(""); setExportFile(null);
+  }
+
+  async function savePrintDrafts() {
+    setSavingPrintDrafts(true);
+    try { for (const item of unsavedPrintItems) if (!await saveReflection(item.id)) { setPrintError("部分错因未能保存，请返回题目检查后重试。"); return; } setPrintError(""); }
+    finally { setSavingPrintDrafts(false); }
+  }
 
   const [lightboxImage, setLightboxImage] = useState<{ url: string; title: string } | null>(null);
   useEffect(() => {
@@ -473,42 +609,72 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
     } catch (cause) { setError(cause instanceof Error ? cause.message : "移除失败"); }
   }
 
-  async function exportMistakes(items: Mistake[]) {
+  async function exportMistakes(items: Mistake[], options?: MistakePrintOptions) {
     if (exportingWord || !items.length) return;
-    setError("");
-    setExportFile(null);
-    // A direct server download keeps Huawei and other mobile browsers out of the Blob download path.
-    if (items.length <= 30 && items.every(item => !/\.webp$/i.test(item.sourceName))) {
-      const url = items.length === 1
-        ? `/api/mistakes/${encodeURIComponent(items[0].id)}/word`
-        : `/api/mistakes/word?${items.map(item => `id=${encodeURIComponent(item.id)}`).join("&")}`;
-      window.location.assign(url);
-      return;
-    }
+    if (items.some(item => drafts[item.id] && drafts[item.id].value !== (item.reflection || ""))) { setPrintError("请先保存或放弃未保存的错因。"); return; }
+    setError(""); setPrintError(""); setPrintProgress(""); setExportFile(null);
     setExportingWord(true);
     try {
-      const prepared = [];
-      for (const item of items) {
-        const visualQuestion = /(?:如|见|下|右|左).{0,4}[图表]|图(?:形|像|象|表|示)|统计图|坐标系|作图/.test(item.question);
-        prepared.push({ ...item, visualQuestion, ...(needsOriginalPicture(item) ? { sourceImage: await sourcePicture(item) } : {}) });
+      const response = await fetch("/api/mistakes", { cache: "no-store" });
+      if (redirectIfUnauthorized(response)) return;
+      const data = await response.json() as { mistakes?: Mistake[]; error?: string };
+      if (!response.ok || !Array.isArray(data.mistakes)) throw new Error(data.error || "读取最新错题失败，请重试");
+      const current = new Map(data.mistakes.map(item => [item.id, item]));
+      const latest = items.map(item => current.get(item.id));
+      if (latest.some(item => !item)) { setMistakes(data.mistakes); setPrintIds(ids => ids?.filter(id => current.has(id)) ?? null); throw new Error("部分错题已不存在或无权访问，题目清单已更新，请核对后重试。"); }
+      const fresh = latest as Mistake[];
+      setMistakes(data.mistakes);
+      const needsCrop = options?.template === "paste" && fresh.some(item => needsOriginalPicture(item) && item.questionBounds?.length === 4);
+      if (!needsCrop && fresh.length <= 30 && fresh.every(item => !/\.webp$/i.test(item.sourceName))) {
+        const params = options ? printOptionsParams(options) : new URLSearchParams();
+        if (fresh.length > 1) fresh.forEach(item => params.append("id", item.id));
+        const path = fresh.length === 1 ? `/api/mistakes/${encodeURIComponent(fresh[0].id)}/word` : "/api/mistakes/word";
+        const url = `${path}${params.size ? `?${params}` : ""}`;
+        const name = mistakesDocxFilename(fresh, options);
+        setExportFile({ url, name });
+        serverDownload.current?.remove();
+        const frame = document.createElement("iframe");
+        frame.hidden = true; frame.name = "mistake-word-download"; frame.title = "Word 文件下载";
+        frame.onload = () => {
+          try {
+            if (frame.contentWindow?.location.href === "about:blank") return;
+            const body = frame.contentDocument?.body.textContent || "";
+            const failure = JSON.parse(body) as { error?: string };
+            if (failure.error) { setPrintError(failure.error); setPrintProgress(""); }
+          } catch { /* Attachment responses do not replace the download frame document. */ }
+        };
+        frame.onerror = () => { setPrintError("Word 下载失败，请重试下载链接。"); setPrintProgress(""); };
+        frame.src = url; serverDownload.current = frame; document.body.appendChild(frame);
+        setPrintProgress("已请求下载。若下载未开始，请点击下方链接重试；用 Word / WPS 打开后打印。");
+        return;
       }
-      const bytes = makeMistakesDocx(prepared);
+      const prepared = [];
+      for (const [index, item] of fresh.entries()) {
+        setPrintProgress(`正在准备第 ${index + 1}/${fresh.length} 道题…`);
+        const visualQuestion = /(?:如|见|下|右|左).{0,4}[图表]|图(?:形|像|象|表|示)|统计图|坐标系|作图/.test(item.question);
+        try { prepared.push({ ...item, visualQuestion, ...(needsOriginalPicture(item) ? { sourceImage: await sourcePicture(item) } : {}) }); }
+        catch (cause) { throw new Error(`第 ${index + 1} 题：${cause instanceof Error ? cause.message : "原图读取失败"}`); }
+      }
+      const bytes = makeMistakesDocx(prepared, options);
       const blob = new Blob([bytes.buffer], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      const name = mistakesDocxFilename(items);
+      const name = mistakesDocxFilename(fresh, options);
       link.href = url; link.download = name;
       setExportFile({ url, name });
       document.body.appendChild(link);
       try { link.click(); } finally { link.remove(); }
+      setPrintProgress(`已生成 ${fresh.length} 道错题的 Word，可下载后打印。`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Word 文档生成失败，请重试。");
+      const message = cause instanceof Error ? cause.message : "Word 文档生成失败，请重试。";
+      setPrintError(message); setError(message); setPrintProgress("");
     } finally { setExportingWord(false); }
   }
 
-  function exportMistake(item: Mistake) { void exportMistakes([item]); }
+  function exportMistake(item: Mistake) { openPrintSettings([item], "worksheet"); }
 
   async function signOut() {
+    if (!discardBeforeLeaving()) return;
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } catch {
@@ -532,7 +698,7 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  const recent = mistakes.slice(0, 2);
+  const recent = [...mistakes].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 2);
   const grading = analysis?.grading || [];
   const correctCount = grading.filter(item => item.verdict === "correct").length;
   const uncertainCount = grading.filter(item => item.verdict === "uncertain").length;
@@ -791,6 +957,7 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
             </div>
           )}
           <section className="feature-links" aria-label="学习工具"><button type="button" onClick={() => setTab("knowledge")}><span className="feature-link-icon"><Network size={20} /></span><span><strong>查看知识图谱</strong><small>找出重复出错的知识点</small></span><ArrowRight size={17} /></button><button type="button" onClick={() => openPractice()}><span className="feature-link-icon peach"><ClipboardList size={20} /></span><span><strong>生成单元练习卷</strong><small>在线作答、批改并下载 Word</small></span><ArrowRight size={17} /></button><button type="button" onClick={() => setTab("essay")}><span className="feature-link-icon mint"><PenLine size={20} /></span><span><strong>分析英语作文</strong><small>照片识别、逐句批改与润色</small></span><ArrowRight size={17} /></button></section>
+          <div className="daily-actions"><button type="button" onClick={() => applyDates(true)}><CalendarDays size={16} />整理今日错题</button></div>
           <section className="recent-section"><div className="section-heading"><div><span className="section-kicker">YOUR PROGRESS</span><h2>最近整理</h2></div><button onClick={() => setTab("notebook")}>查看全部 <ArrowRight size={16} /></button></div>{loadingList ? <div className="empty-recent"><LoaderCircle className="spin" size={20} />正在加载错题本...</div> : recent.length ? <div className="recent-list">{recent.map(item => <button key={item.id} className="recent-item" onClick={() => { setSubject(item.subject); setQuery(item.question.slice(0, 12)); setTab("notebook"); }}><SubjectPill subject={item.subject} /><span>{item.question}</span><small>{formatDate(item.createdAt)}</small><ArrowRight size={16} /></button>)}</div> : <div className="empty-recent"><div className="empty-icon"><BookOpen size={24} /></div><div><strong>你的错题本还很清爽</strong><p>上传第一张试卷，开始积累属于自己的学习地图。</p></div></div>}</section>
         </>}
         {tab === "results" && analysis && <>
@@ -798,7 +965,8 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
           <div className="result-summary"><div><span>识别科目</span><SubjectPill subject={analysis.subject} /></div><div><span>批改方式</span><strong>{analysis.gradingMode === "marked" ? "参考已有批改" : analysis.gradingMode === "mixed" ? "已有批改 + 智能批改" : "智能批改"}</strong></div><div><span>判定正确</span><strong>{correctCount} 道</strong></div><div><span>发现错题</span><strong>{analysis.mistakes.length} 道</strong></div>{uncertainCount > 0 && <div><span>待核对</span><strong>{uncertainCount} 道</strong></div>}</div>
           <div className="notice-card"><Lightbulb size={17} /><span>智能批改仅供学习参考，请核对题目、作答和答案；不清楚的题不会自动归档为错题。<MathText value={analysis.uncertainNote} /></span></div>
           {grading.length > 0 && <section className="grading-panel"><h2>逐题批改</h2><div className="grading-list">{grading.map((item, index) => <div className="grading-row" key={`${item.pageNumber}-${item.questionLabel}-${index}`}><span className={`grading-verdict ${item.verdict}`}>{item.verdict === "correct" ? "正确" : item.verdict === "incorrect" ? "错误" : "待核对"}</span><div><strong>第 {item.pageNumber} 页 · <MathText value={item.questionLabel} /></strong><p><MathText value={item.comment} /></p></div></div>)}</div></section>}
-          {resultMistakes.length ? <><BatchToolbar items={resultMistakes} allItems={mistakes} selectedIds={selectedMistakeIds} count={batchCount} onCountChange={setBatchCount} onToggleAll={toggleAllMistakes} onClear={() => { setSelectedMistakeIds([]); setBatchNotice(""); }} onGenerate={generateSimilarBatch} onExport={exportMistakes} busy={batchBusy || busySimilar !== null || exportingWord} progress={batchProgress} notice={batchNotice} trialExpired={trialExpired} /><div className="question-stack">{resultMistakes.map(item => <MistakeCard key={item.id} item={item} onSimilar={requestSimilar} onExport={exportMistake} onDelete={removeMistake} onSelect={toggleMistake} selectedForBatch={selectedMistakeIds.includes(item.id)} batchBusy={batchBusy} busy={busySimilar === item.id} exportingWord={exportingWord} trialExpired={trialExpired} onViewPhoto={(url, title) => setLightboxImage({ url, title })} />)}</div></> : <div className="empty-state"><CheckCircle2 size={42} /><h2>没有确认的错题</h2><p>如果题目或作答不清晰，请换一张更清晰的照片再试。</p></div>}
+          {resultMistakes.length > 0 && <div className="daily-actions"><button type="button" onClick={() => openPrintSettings(resultMistakes)}>整理这批错题</button><button type="button" onClick={() => { const day = beijingDate(resultMistakes[0].createdAt); setDates({ date: day, dateFrom: "", dateTo: "" }); setDateInput(day); setDateMode("day"); setMonth(""); setDateError(""); setTab("notebook"); }}>查看归档当日错题</button></div>}
+          {resultMistakes.length ? <><BatchToolbar items={resultMistakes} allItems={mistakes} selectedIds={selectedMistakeIds} count={batchCount} onCountChange={setBatchCount} onToggleAll={toggleAllMistakes} onClear={() => { setSelectedMistakeIds([]); setBatchNotice(""); }} onGenerate={generateSimilarBatch} onExport={openPrintSettings} busy={batchBusy || busySimilar !== null || exportingWord} progress={batchProgress} notice={batchNotice} trialExpired={trialExpired} /><div className="question-stack">{resultMistakes.map(item => <MistakeCard key={item.id} item={item} onSimilar={requestSimilar} onExport={exportMistake} onDelete={removeMistake} onSelect={toggleMistake} selectedForBatch={selectedMistakeIds.includes(item.id)} batchBusy={batchBusy} busy={busySimilar === item.id} exportingWord={exportingWord} trialExpired={trialExpired} reflections={reflections} onViewPhoto={(url, title) => setLightboxImage({ url, title })} />)}</div></> : <div className="empty-state"><CheckCircle2 size={42} /><h2>没有确认的错题</h2><p>如果题目或作答不清晰，请换一张更清晰的照片再试。</p></div>}
           <button className="bottom-primary" onClick={() => { setTab("home"); fileRef.current?.click(); }}><Plus size={18} />继续上传</button>
         </>}
         {tab === "knowledge" && <KnowledgeMap mistakes={mistakes} papers={papers} initialSubject={knowledgeSubject} initialPoint={knowledgePoint} trialExpired={trialExpired} aiReady={aiReady} onTrialExpired={() => setTrialExpired(true)} onPractice={openPractice} onOpenMistake={item => { setSubject(item.subject); setQuery(item.question.slice(0, 30)); setMonth(""); setTab("notebook"); }} />}
@@ -854,17 +1022,27 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
               </label>
               <label>
                 <CalendarDays size={16} />
-                <input type="month" value={month} onChange={event => setMonth(event.target.value)} aria-label="筛选月份" />
+                <input type="month" value={month} onChange={event => { setMonth(event.target.value); clearDates(); }} aria-label="筛选月份" />
               </label>
             </div>
           </div>
-          <div className="notebook-count">
-            共 <strong>{filtered.length}</strong> 道错题 {(subject !== "全部科目" || query || month) && <button onClick={() => { setSubject("全部科目"); setQuery(""); setMonth(""); }}>清除筛选 <X size={13} /></button>}
+          <div className="daily-filter" role="group" aria-label="按归档日期整理">
+            <button type="button" onClick={() => applyDates(true)}><CalendarDays size={15} />今天</button>
+            <label>日期方式<select value={dateMode} onChange={event => setDateMode(event.target.value as "day" | "range")}><option value="day">指定日期</option><option value="range">日期区间</option></select></label>
+            {dateMode === "day" ? <label>归档日期<input type="date" value={dateInput} onChange={event => setDateInput(event.target.value)} /></label> : <><label>开始日期<input type="date" value={dateFromInput} onChange={event => setDateFromInput(event.target.value)} /></label><label>结束日期<input type="date" value={dateToInput} onChange={event => setDateToInput(event.target.value)} /></label></>}
+            <button type="button" onClick={() => applyDates()}>应用日期</button>
+            {(dates.date || dates.dateFrom) && <button type="button" onClick={clearDates}>清除日期</button>}
+            <p className="daily-timezone">归档日期按北京时间计算{dates.date ? ` · 当前：${dates.date}` : dates.dateFrom ? ` · 当前：${dates.dateFrom} 至 ${dates.dateTo}` : ""}</p>
+            {dateError && <p className="printing-error" role="alert">{dateError}</p>}
           </div>
-          {filtered.length > 0 && <BatchToolbar items={filtered} allItems={mistakes} selectedIds={selectedMistakeIds} count={batchCount} onCountChange={setBatchCount} onToggleAll={toggleAllMistakes} onClear={() => { setSelectedMistakeIds([]); setBatchNotice(""); }} onGenerate={generateSimilarBatch} onExport={exportMistakes} busy={batchBusy || busySimilar !== null || exportingWord} progress={batchProgress} notice={batchNotice} trialExpired={trialExpired} />}
-          {loadingList ? <div className="empty-state" role="status"><LoaderCircle className="spin" size={30} /><h2>正在加载错题本</h2><p>正在读取你的题目与分类，请稍候。</p></div> : groups.length ? groups.map(([date, items]) => (
+          <div className="notebook-count">
+            共 <strong>{filtered.length}</strong> 道错题 {(subject !== "全部科目" || query || month || dates.date || dates.dateFrom) && <button onClick={() => { setSubject("全部科目"); setQuery(""); setMonth(""); clearDates(); }}>清除筛选 <X size={13} /></button>}
+          </div>
+          {!filtered.length && batchNotice && <p className="batch-status" role="status">{batchNotice}</p>}
+          {filtered.length > 0 && !listError && <BatchToolbar items={filtered} allItems={mistakes} selectedIds={selectedMistakeIds} count={batchCount} onCountChange={setBatchCount} onToggleAll={toggleAllMistakes} onClear={() => { setSelectedMistakeIds([]); setBatchNotice(""); }} onGenerate={generateSimilarBatch} onExport={openPrintSettings} busy={batchBusy || busySimilar !== null || exportingWord} progress={batchProgress || printProgress} notice={batchNotice} trialExpired={trialExpired} />}
+          {loadingList ? <div className="empty-state" role="status"><LoaderCircle className="spin" size={30} /><h2>正在加载错题本</h2><p>正在读取你的题目与分类，请稍候。</p></div> : listError ? <div className="empty-state" role="alert"><h2>错题本暂时无法读取</h2><p>{listError}</p><button type="button" onClick={() => void loadMistakes()}>重新加载</button></div> : groups.length ? groups.map(([date, items]) => (
             <section className="date-group" key={date}>
-              <div className="date-heading"><span className="date-dot" /><h2>{formatDate(date)}</h2><span>{items.length} 道错题</span></div>
+              <div className="date-heading"><span className="date-dot" /><h2>{formatDate(date)}</h2><span>{items.length} 道错题</span><button type="button" onClick={() => toggleAllMistakes(items)} disabled={batchBusy || exportingWord}>{items.every(item => selectedMistakeIds.includes(item.id)) ? "取消本日选择" : "选择本日全部"}</button><button type="button" onClick={() => openPrintSettings(items)} disabled={exportingWord}>整理本日错题</button></div>
               <div className="question-stack notebook-grid">
                 {items.map(item => (
                   <MistakeCard
@@ -881,6 +1059,7 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
                     trialExpired={trialExpired}
                     showDelete
                     compact
+                    reflections={reflections}
                     onViewPhoto={(url, title) => setLightboxImage({ url, title })}
                   />
                 ))}
@@ -891,7 +1070,7 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
               <BookOpen size={42} />
               <h2>{mistakes.length ? "没有找到符合条件的题目" : "错题本还是空的"}</h2>
               <p>{mistakes.length ? "试试更换科目、时间或搜索词。" : "上传试卷或作业，错题会自动按科目和时间存入这里。"}</p>
-              {mistakes.length ? <button onClick={() => { setSubject("全部科目"); setQuery(""); setMonth(""); }}>清除筛选 <X size={16} /></button> : <button onClick={() => { setTab("home"); scrollToUpload(); }}>去上传题目 <ArrowRight size={16} /></button>}
+              {mistakes.length ? <button onClick={() => { setSubject("全部科目"); setQuery(""); setMonth(""); clearDates(); }}>清除筛选 <X size={16} /></button> : <button onClick={() => { setTab("home"); scrollToUpload(); }}>去上传题目 <ArrowRight size={16} /></button>}
             </div>
           )}
         </>}
@@ -913,5 +1092,6 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
       </div>,
       document.body
     )}
+    {printIds !== null && <PrintSettings items={printItems} options={printOptions} onOptions={options => { setPrintOptions(options); printOptionsChosen.current = true; setExportFile(null); }} onItems={ids => { setPrintIds(ids); setExportFile(null); setPrintError(""); }} onClose={() => { if (!exportingWord && !savingPrintDrafts) setPrintIds(null); }} onGenerate={() => void exportMistakes(printItems, printOptions)} busy={exportingWord || savingPrintDrafts} progress={printProgress} error={printError} download={exportFile} unsaved={unsavedPrintItems.length} onSaveDrafts={() => void savePrintDrafts()} onDiscardDrafts={() => { unsavedPrintItems.forEach(item => discardDraft(item.id)); setPrintError(""); }} />}
   </div></>;
 }

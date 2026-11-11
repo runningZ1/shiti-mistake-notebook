@@ -9,3 +9,5 @@
 2026-11-06 本地实施以 [支付实施基线](alipay-payment/IMPLEMENTATION.md) 和 [交付记录](../../delivery/features/alipay-payment.md) 为准；上方11月3日草案仅保留历史核查状态。业务端已实现，真实支付未开放；后续自动化验收由用户执行。
 
 - [管理员小额支付测试页](alipay-payment/ADMIN-TEST.md)：支持一分钱与指定金额，管理员专用、独立开关，测试收款不增加会员天数。
+
+- [每日错题整理与剪贴打印](daily-mistake-printing.md)：v0.1.0，按用户授权完成按天汇总、本人错因、剪贴模板与打印设置的本地开发。[技术方案](daily-mistake-printing/TECH.md)与[开发验收记录](../../delivery/features/daily-mistake-printing.md)列出契约、已执行验证与真机/纸面限制。记录时间为2026年11月11日 21:23:18（北京时间）；隔离验证已结束并清理，未迁移原库、未发布。多孩与收费仍为独立待决项。

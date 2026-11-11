@@ -1,0 +1,62 @@
+.reflection-editor { margin-top: 18px; padding: 16px; border: 1px solid #ddd9f4; border-radius: 12px; background: #faf9ff; }
+.reflection-editor > label { display: block; color: #312e59; font-size: 14px; font-weight: 700; }
+.reflection-editor > label > span { display: block; margin-top: 5px; font-size: 12px; font-weight: 400; color: #64748b; }
+.reflection-editor textarea { display: block; width: 100%; min-height: 92px; resize: vertical; margin: 12px 0 9px; padding: 10px 12px; border: 1px solid #d8dce8; border-radius: 8px; background: #fff; font: inherit; font-size: 14px; line-height: 1.65; color: #1e293b; }
+.reflection-editor textarea:focus { outline: 2px solid #b2a4f3; outline-offset: 2px; }
+.reflection-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.reflection-actions > span { color: #64748b; font-size: 12px; }
+.reflection-actions > div { display: flex; gap: 8px; }
+.reflection-actions button, .daily-filter button, .date-heading button, .printing-unsaved button, .daily-actions button { display: inline-flex; gap: 6px; align-items: center; justify-content: center; padding: 7px 12px; border: 1px solid #dcd8ef; border-radius: 8px; background: #fff; color: #5b46b2; font-size: 13px; cursor: pointer; }
+.reflection-actions button:disabled, .printing-panel button:disabled { opacity: .5; cursor: not-allowed; }
+.daily-filter { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; padding: 16px; margin-top: 16px; border: 1px solid #e4e7ef; border-radius: 12px; background: #fff; }
+.daily-filter label { display: grid; gap: 5px; font-size: 12px; color: #64748b; }
+.daily-filter input, .daily-filter select { min-height: 36px; min-width: 130px; border: 1px solid #d8dce8; border-radius: 7px; padding: 6px 9px; font: inherit; color: #334155; background: #fff; }
+.daily-filter .daily-timezone { flex-basis: 100%; margin: 0; color: #64748b; font-size: 12px; }
+.daily-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
+.date-heading { flex-wrap: wrap; }
+.date-heading button { margin-left: auto; }
+.printing-backdrop { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: center; justify-content: center; background: rgb(15 23 42 / 45%); padding: 24px; }
+.printing-panel { display: flex; flex-direction: column; width: min(760px, 100%); max-height: calc(100dvh - 48px); background: #fff; color: #1e293b; border-radius: 18px; box-shadow: 0 24px 80px rgb(15 23 42 / 20%); overflow: hidden; }
+.printing-panel > header { display: flex; justify-content: space-between; align-items: start; gap: 12px; padding: 22px 24px 18px; border-bottom: 1px solid #e9eaf2; }
+.printing-panel h2 { margin: 0; font-size: 21px; }
+.printing-panel header p { margin: 7px 0 0; color: #64748b; font-size: 13px; }
+.printing-panel header > button, .printing-order-actions button { display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid #e2e5ed; background: #fff; color: #64748b; border-radius: 8px; min-height: 34px; min-width: 34px; cursor: pointer; }
+.printing-body { overflow-y: auto; padding: 20px 24px; }
+.printing-options { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 0; margin: 0; border: 0; min-width: 0; }
+.printing-options legend { font-size: 14px; font-weight: 700; margin-bottom: 14px; }
+.printing-options label { display: grid; gap: 7px; font-size: 13px; }
+.printing-options select { min-height: 40px; width: 100%; border: 1px solid #d8dce8; border-radius: 8px; padding: 8px 10px; font: inherit; color: #334155; background: #fff; }
+.printing-options .printing-wide { grid-column: 1 / -1; }
+.printing-options .printing-check { display: flex; align-items: start; gap: 8px; line-height: 1.6; }
+.printing-check input { margin-top: 4px; accent-color: #7660d4; }
+.printing-note { margin: 16px 0; padding: 12px; border-radius: 9px; background: #f5f6fb; color: #64748b; font-size: 12px; line-height: 1.8; }
+.printing-unsaved { padding: 12px; border: 1px solid #f0d29b; border-radius: 9px; background: #fffbeb; }
+.printing-unsaved p { margin: 0 0 10px; font-size: 13px; }
+.printing-unsaved button + button { margin-left: 8px; }
+.printing-order h3 { font-size: 14px; margin: 18px 0 10px; }
+.printing-order ol { list-style: none; padding: 0; margin: 0; }
+.printing-order li { display: flex; justify-content: space-between; gap: 12px; align-items: center; border-bottom: 1px solid #edf0f5; padding: 12px 0; }
+.printing-order li > div:first-child { min-width: 0; }
+.printing-order li span { font-size: 12px; font-weight: 700; color: #7660b8; }
+.printing-order li p { margin: 6px 0 0; font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.printing-order-actions { display: flex; gap: 5px; }
+.printing-panel > footer { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 16px 24px; border-top: 1px solid #e9eaf2; background: #fafbff; }
+.printing-panel footer > div { min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
+.printing-panel footer p { margin: 0; }
+.printing-panel footer a { color: #6951c2; }
+.printing-error { color: #b42335; }
+.printing-generate { display: inline-flex; align-items: center; justify-content: center; gap: 7px; flex-shrink: 0; padding: 11px 16px; border: 0; border-radius: 9px; background: #7560cf; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+@media (max-width: 640px) {
+  .printing-backdrop { padding: 10px; align-items: end; }
+  .printing-panel { max-height: calc(100dvh - 20px); border-radius: 16px; }
+  .printing-panel > header, .printing-body, .printing-panel > footer { padding: 16px; }
+  .printing-panel > footer { flex-direction: column; align-items: stretch; }
+  .printing-options { grid-template-columns: 1fr; }
+  .printing-options .printing-wide { grid-column: auto; }
+  .printing-order li { align-items: start; }
+  .printing-order-actions { flex-direction: column; }
+  .daily-filter { padding: 12px; }
+  .daily-filter label { flex: 1 1 130px; }
+  .daily-filter input, .daily-filter select { width: 100%; min-width: 0; }
+  .date-heading button { margin-left: 0; }
+}

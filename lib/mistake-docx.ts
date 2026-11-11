@@ -1,12 +1,14 @@
 /** Editable Word worksheet. Uses standard OOXML and an uncompressed ZIP, with no network or runtime dependencies. */
 import { parseMath, splitMathText, type MathNode } from "./math-notation";
 import { kindForQuestion, practiceFormatLabels, practiceKindLabels, type PracticeQuestionFormat, type PracticeQuestionKind } from "./practice-blueprint";
+import type { MistakePrintOptions } from "./mistake-print-options";
 export type WorksheetMistake = {
   subject: string;
   question: string;
   incorrectAnswer: string;
   correctAnswer: string;
   reasoning: string;
+  reflection?: string;
   knowledgePoint: string;
   pageNumber: number;
   sourceName: string;
@@ -135,10 +137,10 @@ function zip(entries: [string, string | Uint8Array][]): Uint8Array<ArrayBuffer> 
   return result;
 }
 
-function sourceDrawing(index: number, image: NonNullable<WorksheetMistake["sourceImage"]>, visual: boolean): string {
-  // A4 with 20 mm margins leaves roughly 6.7 in of usable width.
-  const maxWidth = 5_850_000;
-  const maxHeight = visual || image.fullPage ? 3_360_000 : 1_900_000;
+function sourceDrawing(index: number, image: NonNullable<WorksheetMistake["sourceImage"]>, visual: boolean, paste = false): string {
+  // Paste pictures use the available width; only pictures taller than a printable page are reduced.
+  const maxWidth = paste ? 6_000_000 : 5_850_000;
+  const maxHeight = paste ? 7_800_000 : visual || image.fullPage ? 3_360_000 : 1_900_000;
   const scale = Math.min(maxWidth / image.width, maxHeight / image.height);
   const cx = Math.max(1, Math.round(image.width * scale));
   const cy = Math.max(1, Math.round(image.height * scale));
@@ -152,27 +154,81 @@ function sourceDrawing(index: number, image: NonNullable<WorksheetMistake["sourc
     `</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
 }
 
+function recordedDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(date);
+}
+
+function reflectionBlock(item: WorksheetMistake, options: MistakePrintOptions): string {
+  const saved = options.reflectionMode !== "blank" ? (item.reflection ?? "").trim() : "";
+  const blank = !saved || options.reflectionMode === "saved-plus-blank";
+  // Reflection is literal student text, never parsed as mathematical notation or replaced by AI reasoning.
+  const text = saved.replace(/\r\n?/g, "\n").split("\n").map(line =>
+    `<w:p><w:r><w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r></w:p>`).join("");
+  const lines = blank ? Array.from({ length: 3 }, () =>
+    '<w:p><w:pPr><w:spacing w:after="0" w:line="480" w:lineRule="exact"/><w:pBdr><w:bottom w:val="single" w:sz="4" w:color="D9D9D9"/></w:pBdr></w:pPr><w:r><w:t> </w:t></w:r></w:p>').join("") : "";
+  return paragraphs("我的错因", "Heading2") + (saved ? text : "") + lines;
+}
+
+function pasteQuestion(item: WorksheetMistake, index: number, options: MistakePrintOptions): string {
+  const image = item.sourceImage;
+  const imageNote = image ? paragraphs(image.fullPage
+    ? "原题整页图片：未裁剪，请核对原题题号；原图中的答案、笔迹和批注可能一并打印。"
+    : "原题区域图片：保留该区域原有答案、笔迹和批注，请核对题目完整性。", "Subtitle") : "";
+  const tooTall = image && image.height * (6_000_000 / image.width) > 7_800_000;
+  const content = [
+    paragraphs(item.question), imageNote,
+    ...(image ? [sourceDrawing(index + 1, image, Boolean(item.visualQuestion), true)] : []),
+    ...(tooTall ? [paragraphs("长图已等比适配单页以完整保留，不裁切图表；图内字号可能偏小。请在Word/WPS核对，必要时重新上传清晰局部图后打印。", "Subtitle")] : []),
+    paragraphs(`来源：${item.sourceName || "未记录来源"} · 原资料第 ${item.pageNumber} 页`, "Subtitle"),
+    reflectionBlock(item, options),
+    ...(options.includeSimilar ? item.similarQuestions.flatMap((similar, similarIndex) => [
+      paragraphs(`第 ${index + 1} 题 · 举一反三 ${similarIndex + 1}`, "Heading2"),
+      paragraphs(similar.question), writingSpace(2),
+    ]) : []),
+  ].join("");
+  // Conservatively keep compact text-only questions together. Long rows may flow, with the question number repeated.
+  const textParts = [item.question, options.reflectionMode === "blank" ? "" : item.reflection ?? "", item.sourceName];
+  const lineCount = textParts.reduce((sum, text) => sum + text.split("\n").reduce((lines, line) => lines + Math.max(1, Math.ceil([...line].length / 28)), 0), 0);
+  const short = !image && (!options.includeSimilar || !item.similarQuestions.length) && lineCount <= 10;
+  const title = `第 ${index + 1} 题 · ${item.subject} · 整理日期（北京时间）：${recordedDate(item.createdAt) || "未记录"}`;
+  return `<w:tbl><w:tblPr><w:tblW w:w="9638" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="40" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="40" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="9638"/></w:tblGrid>` +
+    `<w:tr><w:trPr><w:tblHeader/><w:cantSplit/></w:trPr><w:tc><w:tcPr><w:tcW w:w="9638" w:type="dxa"/></w:tcPr>${paragraphs(title, "Heading1")}</w:tc></w:tr>` +
+    `<w:tr><w:trPr>${short ? "<w:cantSplit/>" : ""}</w:trPr><w:tc><w:tcPr><w:tcW w:w="9638" w:type="dxa"/></w:tcPr>${content}</w:tc></w:tr></w:tbl>` +
+    '<w:p><w:pPr><w:spacing w:before="150" w:after="150"/><w:pBdr><w:bottom w:val="dashed" w:sz="4" w:color="CCCCCC"/></w:pBdr></w:pPr><w:r><w:rPr><w:sz w:val="16"/><w:color w:val="888888"/></w:rPr><w:t>裁剪线</w:t></w:r></w:p>';
+}
+
 export function makeMistakeDocx(
   item: WorksheetMistake,
+  options?: MistakePrintOptions,
 ): Uint8Array<ArrayBuffer> {
-  return makeMistakesDocx([item]);
+  return makeMistakesDocx([item], options);
 }
 
 /** One editable worksheet for the selected mistakes, with one shared answer section. */
-export function makeMistakesDocx(items: WorksheetMistake[]): Uint8Array<ArrayBuffer> {
+export function makeMistakesDocx(items: WorksheetMistake[], options?: MistakePrintOptions): Uint8Array<ArrayBuffer> {
   if (!items.length) throw new Error("请先选择错题");
+  items.forEach((item, index) => {
+    const image = item.sourceImage;
+    if (image && (!image.bytes.length || !Number.isFinite(image.width) || !Number.isFinite(image.height) || image.width <= 0 || image.height <= 0)) {
+      throw new Error(`第 ${index + 1} 题原图不可读，请重新加载后重试`);
+    }
+  });
+  const paste = options?.template === "paste";
+  const includeAnswers = options?.includeAnswers ?? true;
+  const includeSimilar = options?.includeSimilar ?? true;
   const single = items.length === 1;
   const first = items[0];
   const parsedDate = new Date(first.createdAt);
-  const recorded = Number.isNaN(parsedDate.getTime()) ? "" : parsedDate.toLocaleDateString("zh-CN");
+  const recorded = options ? recordedDate(first.createdAt) : Number.isNaN(parsedDate.getTime()) ? "" : parsedDate.toLocaleDateString("zh-CN");
   const body = [
-    paragraphs(single ? "错题练习单" : `错题练习单 · ${items.length} 道`, "Title"),
-    paragraphs(
-      single ? [first.subject, first.knowledgePoint, recorded].filter(Boolean).join(" · ") : `${items.length} 道错题 · 题目与答案分开`,
-      "Subtitle",
-    ),
-    paragraphs("姓名：________________    日期：________________", "Subtitle"),
-    ...items.flatMap((item, itemIndex) => [
+    paragraphs(paste ? `错题本剪贴版 · ${items.length} 道` : single ? "错题练习单" : `错题练习单 · ${items.length} 道`, "Title"),
+    paragraphs(paste ? "A4纵向 · 20mm页边距 · 版式示意，实际分页以Word/WPS为准。长题跨页时重复题号栏。" :
+      single ? [first.subject, first.knowledgePoint, recorded].filter(Boolean).join(" · ") : `${items.length} 道错题 · 题目与答案分开`, "Subtitle"),
+    ...(paste ? [] : [paragraphs("姓名：________________    日期：________________", "Subtitle")]),
+    ...(paste && options ? items.map((item, index) => pasteQuestion(item, index, options)) : items.flatMap((item, itemIndex) => [
       paragraphs(single ? "一、原题" : `第 ${itemIndex + 1} 道错题 · ${item.subject} · ${item.knowledgePoint || "未标注知识点"}`, "Heading1"),
       paragraphs(item.question),
       ...(item.sourceImage ? [
@@ -181,7 +237,8 @@ export function makeMistakesDocx(items: WorksheetMistake[]): Uint8Array<ArrayBuf
       ] : []),
       ...(item.sourceName ? [paragraphs(`来源：${item.sourceName} · 第 ${item.pageNumber} 页`, "Subtitle")] : []),
       writingSpace(2),
-      ...(item.similarQuestions.length ? [
+      ...(options ? [reflectionBlock(item, options)] : []),
+      ...(includeSimilar && item.similarQuestions.length ? [
         paragraphs(single ? "二、举一反三" : "举一反三", "Heading1"),
         ...item.similarQuestions.flatMap((similar, index) => [
           paragraphs(`练习 ${index + 1}`, "Heading2"),
@@ -189,8 +246,8 @@ export function makeMistakesDocx(items: WorksheetMistake[]): Uint8Array<ArrayBuf
           writingSpace(2),
         ]),
       ] : []),
-    ]),
-    '<w:p><w:r><w:br w:type="page"/></w:r></w:p>',
+    ])),
+    ...(includeAnswers ? ['<w:p><w:r><w:br w:type="page"/></w:r></w:p>',
     paragraphs("参考答案与解析", "Title"),
     paragraphs("完成练习后再核对答案。", "Subtitle"),
     ...items.flatMap((item, itemIndex) => [
@@ -198,21 +255,21 @@ export function makeMistakesDocx(items: WorksheetMistake[]): Uint8Array<ArrayBuf
       paragraphs(`我的原答案：${item.incorrectAnswer || "未记录"}`),
       paragraphs(`正确答案：${item.correctAnswer}`),
       paragraphs(`解题思路：${item.reasoning || "未记录"}`),
-      ...item.similarQuestions.flatMap((similar, index) => [
+      ...(includeSimilar ? item.similarQuestions : []).flatMap((similar, index) => [
         paragraphs(`练习 ${index + 1}`, "Heading2"),
         paragraphs(`答案：${similar.answer}`),
         paragraphs(`解析：${similar.explanation || "未记录"}`),
       ]),
-    ]),
+    ]),] : []),
     '<w:sectPr><w:footerReference w:type="default" r:id="rIdFooter"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567"/><w:pgNumType w:start="1"/></w:sectPr>',
   ].join("");
   const styles = `<w:styles ${ns}>
-    <w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="宋体"/><w:sz w:val="21"/><w:lang w:val="zh-CN" w:eastAsia="zh-CN"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="90" w:line="300" w:lineRule="auto"/><w:widowControl/></w:pPr></w:pPrDefault></w:docDefaults>
+    <w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="宋体"/><w:sz w:val="${options ? options.fontSize * 2 : 21}"/><w:szCs w:val="${options ? options.fontSize * 2 : 21}"/><w:lang w:val="zh-CN" w:eastAsia="zh-CN"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="90" w:line="300" w:lineRule="auto"/><w:widowControl/></w:pPr></w:pPrDefault></w:docDefaults>
     <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
     <w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:pPr><w:keepNext/><w:spacing w:before="100" w:after="130"/></w:pPr><w:rPr><w:b/><w:sz w:val="32"/></w:rPr></w:style>
-    <w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:basedOn w:val="Normal"/><w:rPr><w:color w:val="666666"/><w:sz w:val="21"/></w:rPr></w:style>
-    <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:pPr><w:keepNext/><w:outlineLvl w:val="0"/><w:spacing w:before="170" w:after="80"/></w:pPr><w:rPr><w:b/><w:sz w:val="25"/></w:rPr></w:style>
-    <w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:pPr><w:keepNext/><w:outlineLvl w:val="1"/><w:spacing w:before="110" w:after="50"/></w:pPr><w:rPr><w:b/><w:sz w:val="22"/></w:rPr></w:style>
+    <w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:basedOn w:val="Normal"/><w:rPr><w:color w:val="666666"/><w:sz w:val="${options ? options.fontSize * 2 : 21}"/></w:rPr></w:style>
+    <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:pPr><w:keepNext/><w:outlineLvl w:val="0"/><w:spacing w:before="170" w:after="80"/></w:pPr><w:rPr><w:b/><w:sz w:val="${options ? options.fontSize * 2 : 25}"/></w:rPr></w:style>
+    <w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:pPr><w:keepNext/><w:outlineLvl w:val="1"/><w:spacing w:before="110" w:after="50"/></w:pPr><w:rPr><w:b/><w:sz w:val="${options ? options.fontSize * 2 : 22}"/></w:rPr></w:style>
     </w:styles>`;
   const media = new Map<Uint8Array, string>();
   const imageTargets = items.map((item, index) => {
@@ -257,7 +314,8 @@ export function makeMistakesDocx(items: WorksheetMistake[]): Uint8Array<ArrayBuf
   ]);
 }
 
-export function mistakeDocxFilename(item: WorksheetMistake): string {
+export function mistakeDocxFilename(item: WorksheetMistake, options?: MistakePrintOptions): string {
+  if (options) return mistakesDocxFilename([item], options);
   const title = ["拾题", item.subject, item.knowledgePoint || "错题练习"].join(
     "-",
   );
@@ -269,8 +327,13 @@ export function mistakeDocxFilename(item: WorksheetMistake): string {
   );
 }
 
-export function mistakesDocxFilename(items: WorksheetMistake[]): string {
+export function mistakesDocxFilename(items: WorksheetMistake[], options?: MistakePrintOptions): string {
   if (!items.length) throw new Error("请先选择错题");
+  if (options) {
+    const dates = items.map(item => recordedDate(item.createdAt)).filter(Boolean).sort();
+    const range = !dates.length ? "日期未记录" : dates[0] === dates[dates.length - 1] ? dates[0] : `${dates[0]}至${dates[dates.length - 1]}`;
+    return `拾题-${range}-${items.length}道错题${options.template === "paste" ? "剪贴版" : "练习单"}.docx`;
+  }
   if (items.length === 1) return mistakeDocxFilename(items[0]);
   const subject = items.every(item => item.subject === items[0].subject) ? items[0].subject : "综合";
   return `拾题-${subject}-${items.length}道错题练习`

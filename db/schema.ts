@@ -57,6 +57,7 @@ export const mistakes = pgTable("mistakes", {
   incorrectAnswer: text("incorrect_answer").notNull(),
   correctAnswer: text("correct_answer").notNull(),
   reasoning: text("reasoning").notNull(),
+  reflection: text("reflection").notNull().default(""),
   knowledgePoint: text("knowledge_point").notNull(),
   pageNumber: integer("page_number").notNull(),
   sourceName: text("source_name").notNull(),
@@ -70,6 +71,7 @@ export const mistakes = pgTable("mistakes", {
   check("mistakes_page_number_check", sql`${table.pageNumber} > 0`),
   check("mistakes_similar_array", sql`jsonb_typeof(${table.similarQuestions}) = 'array'`),
   check("mistakes_bounds_array", sql`jsonb_typeof(${table.questionBounds}) = 'array'`),
+  check("mistakes_reflection_length", sql`char_length(${table.reflection}) <= 1000`),
 ]);
 
 export const practicePapers = pgTable("practice_papers", {

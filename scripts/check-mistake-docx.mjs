@@ -22,6 +22,16 @@ vm.runInNewContext(mathCode, { exports: mathExports });
 const blueprintCode = ts.transpileModule(readFileSync(new URL("../lib/practice-blueprint.ts", import.meta.url), "utf8"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
 const blueprintExports = {};
 vm.runInNewContext(blueprintCode, { exports: blueprintExports });
+const printCode = ts.transpileModule(readFileSync(new URL("../lib/mistake-print-options.ts", import.meta.url), "utf8"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
+const printExports = {};
+vm.runInNewContext(printCode, { exports: printExports, URLSearchParams });
+const { pastePrintOptions, worksheetPrintOptions, printOptionsParams, parseMistakePrintOptions } = printExports;
+for (const options of [pastePrintOptions, { ...worksheetPrintOptions, fontSize: 14, includeAnswers: false, includeSimilar: false, reflectionMode: "blank" }]) {
+  assert.deepEqual(JSON.parse(JSON.stringify(parseMistakePrintOptions(printOptionsParams(options)))), JSON.parse(JSON.stringify(options)));
+}
+for (const query of ["template=unknown", "fontSize=13", "reflectionMode=ai", "includeAnswers=true", "includeSimilar=2", "template=paste&template=worksheet"]) {
+  assert.throws(() => parseMistakePrintOptions(new URLSearchParams(query)), /打印设置/);
+}
 const exports = {};
 vm.runInNewContext(code, { exports, require: name => {
   if (name === "./math-notation") return mathExports;
@@ -88,6 +98,30 @@ writeFileSync(new URL(`../outputs/${unitFile}`, import.meta.url), exports.makeUn
     { question: "根据表格，计算两组数据的差。", answer: "2", explanation: "比较表中数据", knowledgePoint: "统计表", kind: "application", format: "chart", table: { headers: ["组别", "数量"], rows: [["甲", "5"], ["乙", "3"]] } },
   ],
 }));
+const pasteFiles = [];
+for (const reflectionMode of ["saved-or-blank", "blank", "saved-plus-blank"]) {
+  const name = `mistake-paste-${reflectionMode}.docx`;
+  const items = batchItems.map((item, index) => ({ ...item, reflection: index ? "" : "漏看条件 <请核对>\n用自己的话说明", createdAt: index ? "2026-10-19T16:00:00Z" : "2026-10-18T16:00:00Z" }));
+  const options = { ...pastePrintOptions, reflectionMode, fontSize: 14, includeAnswers: reflectionMode !== "blank", includeSimilar: false };
+  writeFileSync(new URL(`../outputs/${name}`, import.meta.url), exports.makeMistakesDocx(items, options));
+  assert.match(exports.mistakesDocxFilename(items, options), /2026-10-19至2026-10-20-2道错题剪贴版\.docx$/);
+  pasteFiles.push(name);
+}
+const pasteImageFile = "mistake-paste-full-page.docx";
+writeFileSync(new URL(`../outputs/${pasteImageFile}`, import.meta.url), exports.makeMistakesDocx([{
+  ...fixture, similarQuestions: [], sourceImage: { bytes: pngBytes, width: pngBytes.readUInt32BE(16), height: pngBytes.readUInt32BE(20), fullPage: true, mime: "image/png" },
+}], { ...pastePrintOptions, includeAnswers: false }));
+pasteFiles.push(pasteImageFile);
+const pasteLongFile = "mistake-paste-long-question.docx";
+writeFileSync(new URL(`../outputs/${pasteLongFile}`, import.meta.url), exports.makeMistakesDocx([{
+  ...fixture, question: fixture.similarQuestions[1].question, similarQuestions: [],
+}], { ...pastePrintOptions, includeAnswers: false, includeSimilar: true }));
+pasteFiles.push(pasteLongFile);
+const pasteSimilarFile = "mistake-paste-similar.docx";
+writeFileSync(new URL(`../outputs/${pasteSimilarFile}`, import.meta.url), exports.makeMistakesDocx([fixture], {
+  ...pastePrintOptions, includeSimilar: true, includeAnswers: true,
+}));
+pasteFiles.push(pasteSimilarFile);
 assert(
   !/[\\/:*?"<>|\u0000-\u001f]/.test(
     exports.mistakeDocxFilename({ ...fixture, subject: '数/学:*?"<>|' }),
@@ -103,6 +137,40 @@ for i, path in enumerate(sys.argv[1:]):
             if name.endswith(('.xml', '.rels')): ET.fromstring(z.read(name))
         doc = ET.fromstring(z.read('word/document.xml'))
         text = '\n'.join(n.text or '' for n in doc.findall('.//w:t', ns))
+        if i >= 6:
+            assert '错题本剪贴版' in text and '我的错因' in text and '裁剪线' in text
+            assert doc.find('.//w:pgSz', ns).get('{'+ns['w']+'}w') == '11906'
+            margins = doc.find('.//w:pgMar', ns)
+            assert all(margins.get('{'+ns['w']+'}'+side) == '1134' for side in ['top', 'left', 'bottom', 'right'])
+            tables = doc.findall('.//w:tbl', ns)
+            assert all(table.find('./w:tr/w:trPr/w:tblHeader', ns) is not None for table in tables)
+            if i != 11: assert '举一反三' not in text and 'English answer' not in text
+            if i < 9:
+                assert len(tables) == 2 and '2026-10-19' in text and '2026-10-20' in text
+                assert text.index('第 1 题') < text.index('第 2 题')
+                assert len(doc.findall('.//w:br[@w:type="page"]', ns)) == (0 if i == 7 else 1)
+                assert ('正确答案：1' in text) == (i != 7)
+                assert ('漏看条件 <请核对>' in text) == (i != 7)
+                fixed_lines = doc.findall('.//w:spacing[@w:lineRule="exact"]', ns)
+                assert len(fixed_lines) == (3 if i == 6 else 6)
+                styles = ET.fromstring(z.read('word/styles.xml'))
+                assert styles.find('./w:docDefaults/w:rPrDefault/w:rPr/w:sz', ns).get('{'+ns['w']+'}val') == '28'
+                assert all(table.findall('./w:tr', ns)[1].find('./w:trPr/w:cantSplit', ns) is not None for table in tables)
+            elif i == 9:
+                assert '原题整页图片' in text and '笔迹和批注' in text
+                assert z.read('word/media/question-1.png')[:8] == b'\x89PNG\r\n\x1a\n'
+                ext = doc.find('.//wp:extent', ns)
+                assert int(ext.get('cx')) <= 6000000 and int(ext.get('cy')) <= 7800000
+                assert tables[0].findall('./w:tr', ns)[1].find('./w:trPr/w:cantSplit', ns) is None
+            elif i == 10:
+                assert text.count('This is a long English question.') == 50
+                assert len(tables) == 1 and tables[0].findall('./w:tr', ns)[1].find('./w:trPr/w:cantSplit', ns) is None
+                assert len(doc.findall('.//w:br[@w:type="page"]', ns)) == 0
+            else:
+                assert '举一反三 1' in text and '举一反三 2' in text
+                assert 'English answer' in text and 'Explanation.' in text
+                assert len(doc.findall('.//w:br[@w:type="page"]', ns)) == 1
+            continue
         if i == 4:
             assert '根式与分数单元练习卷' in text
             assert '基础概念' in text and '典型方法' in text and '迁移应用' in text
@@ -146,7 +214,7 @@ const result = spawnSync(
   [
     "-c",
     python,
-    ...[...files, batchFile, imageFile, unitFile, pngFile].map((name) =>
+    ...[...files, batchFile, imageFile, unitFile, pngFile, ...pasteFiles].map((name) =>
       fileURLToPath(new URL(`../outputs/${name}`, import.meta.url)),
     ),
   ],

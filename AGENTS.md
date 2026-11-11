@@ -62,6 +62,12 @@ node --env-file=.env.postgres scripts/import-postgres.mjs <原SQLite数据库路
 
 修改后运行构建、类型检查及适当的真实 HTTP、浏览器验证。界面元素通过 DOM、文本和元素属性定位；截图只检查视觉效果。不得用示例业务资料填充页面。
 
+## 支付与外部请求
+
+- Workers 中的外部请求使用运行环境支持的参数。需要拒绝重定向时使用 `redirect: "manual"` 并检查响应状态；禁止使用 workerd 不支持的 `redirect: "error"`。Node.js 请求成功、类型检查和构建通过，均不能代替 Workers 运行时验证。
+- 管理员测试支付由 `PAYMENT_TEST_ENABLED` 控制，正式会员支付由 `PAYMENT_ENABLED` 控制。`.dev.vars` 权限保持600；文件权限不控制网页访问与支付开关。核对密钥只报告一致性和配置状态，禁止输出原文。
+- 修改支付请求后，在 Workers 运行环境验证，并在获准联调时通过正式域名、真实管理员及真实小额订单验证付款链接与支付宝收银台。优先复用待付款订单；生成入口、实际付款、回调处理、到账状态与会员权益分别记录验收证据。用户手动付款的结果注明来源，禁止将生成付款链接视为完成收款。
+
 ## 部署
 
 SSH 别名 `server-198`，项目路径 `/opt/shiti-mistake-notebook`，PM2 进程 `shiti-notebook`，应用监听 `127.0.0.1:3105`。

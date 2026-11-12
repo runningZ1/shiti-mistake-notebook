@@ -38,3 +38,17 @@
 - 作文页验证上传入口与空状态布局；没有编造作文报告验证历史报告布局。
 - 未触发新的 OCR、AI、付款或 Word 导出；纸张打印效果不在本次范围。
 - 验证临时源码、运行设置与日志位于被 Git 忽略的 work 目录。原有其他预览进程未终止。
+
+## 正式发布结果
+
+用户随后明确授权提交、推送和部署，已于北京时间 2026-11-12 20:06 完成线上验证。
+
+- 功能版本：`8e742d355d32054d79361a1f71c8930eb7c630c4`，已推送 GitHub `runningZ1/shiti-mistake-notebook` 的 `main`，在 `server-198:/opt/shiti-mistake-notebook` 构建并运行。
+- 独立 tmux 部署会话运行既有 `deploy.sh`；`work/mobile-release-20261112/deploy.log` 出现“部署完成”，`exit-code` 为 0。
+- 私有备份目录：`work/deployment-backups/20261112T120454Z/`。数据库与历史图片备份验证通过，迁移后逐记录哈希核对确认原 204 条记录完整保留，默认档案关联有效；本次没有新增数据库迁移。
+- `shiti-notebook` 与 `shiti-processing-worker` 均为 online，本次各按脚本重启一次。
+- 从服务器通过正式域名 `https://study.chumenclub.com/` 完成 27 项检查：公开页面、匿名接口 401、普通账号后台权限 403、真实管理员和普通用户登录、档案/上传/工作台/学习证据/作文/练习接口，以及历史图片读取。
+- 状态接口的 AI、OCR、存储配置均有效。历史 JPEG 实际读取 443655 字节，SHA-256 为 `27f09aff2f7055b8111a239c1c308f25ab6aedcf74fb78279a8f0bf79f460057`。
+- 已认证的正式工作台 HTML 包含 `viewport-fit=cover`；页面引用的实际 CSS 中已核验档案管理面板与错题详情标签换行规则，确认新资源已发布。
+- 正式验证证据在服务器 `work/mobile-release-20261112/online-verification.json`；密钥与登录 cookie 未进入 Git。
+- 此次上线后的检查为真实 HTTP 与资源校验，移动端浏览器交互沿用上面的本地 Workers 验证；实体手机验收仍未完成。

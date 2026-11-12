@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import ts from "typescript";
+import { z } from "zod";
 
 const source = readFileSync(
   new URL("../lib/mistake-docx.ts", import.meta.url),
@@ -29,11 +30,27 @@ const { pastePrintOptions, worksheetPrintOptions, printOptionsParams, parseMista
 for (const options of [pastePrintOptions, { ...worksheetPrintOptions, fontSize: 14, includeAnswers: false, includeSimilar: false, reflectionMode: "blank" }]) {
   assert.deepEqual(JSON.parse(JSON.stringify(parseMistakePrintOptions(printOptionsParams(options)))), JSON.parse(JSON.stringify(options)));
 }
-for (const query of ["template=unknown", "fontSize=13", "reflectionMode=ai", "includeAnswers=true", "includeSimilar=2", "template=paste&template=worksheet"]) {
+for (const query of ["imageWidthMm=59", "imageWidthMm=166", "imageWidthMm=NaN", "imageWidthMm=", "imageWidthMm=160&imageWidthMm=160", "template=unknown", "fontSize=13", "reflectionMode=ai", "includeAnswers=true", "includeSimilar=2", "template=paste&template=worksheet"]) {
   assert.throws(() => parseMistakePrintOptions(new URLSearchParams(query)), /打印设置/);
 }
+const draftCode = ts.transpileModule(readFileSync(new URL("../lib/workspace-drafts.ts", import.meta.url), "utf8"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
+const draftExports = {};
+vm.runInNewContext(draftCode, { exports: draftExports, require: name => {
+  if (name === "zod") return { z };
+  if (name === "./mistake-print-options") return printExports;
+  throw new Error(`Unexpected draft import: ${name}`);
+} });
+const emptyDraft = { version: 0, payload: { schemaVersion: 1, print: { itemIds: [], options: pastePrintOptions } } };
+assert(draftExports.workspaceDraftWriteSchema.safeParse(emptyDraft).success);
+for (const invalid of [
+  { ...emptyDraft, version: -1 }, { ...emptyDraft, version: 1.5 },
+  { ...emptyDraft, payload: { schemaVersion: 2 } },
+  { ...emptyDraft, payload: { ...emptyDraft.payload, unexpected: true } },
+  { ...emptyDraft, payload: { schemaVersion: 1, print: { itemIds: [], options: { ...pastePrintOptions, imageWidthMm: 160.001 } } } },
+]) assert(!draftExports.workspaceDraftWriteSchema.safeParse(invalid).success);
 const exports = {};
 vm.runInNewContext(code, { exports, require: name => {
+  if (name === "./mistake-print-options") return printExports;
   if (name === "./math-notation") return mathExports;
   if (name === "./practice-blueprint") return blueprintExports;
   throw new Error(`Unexpected import: ${name}`);
@@ -122,6 +139,31 @@ writeFileSync(new URL(`../outputs/${pasteSimilarFile}`, import.meta.url), export
   ...pastePrintOptions, includeSimilar: true, includeAnswers: true,
 }));
 pasteFiles.push(pasteSimilarFile);
+// Format-only checks reuse existing media; no account/learning records are written.
+const longImageFile = "mistake-long-image-segments.docx";
+const croppedImageFile = "mistake-cropped-image-segments.docx";
+const tallImage = { bytes: pngBytes, width: 400, height: 2400, fullPage: true, mime: "image/png" };
+writeFileSync(new URL(`../outputs/${longImageFile}`, import.meta.url), exports.makeMistakesDocx([
+  { ...fixture, similarQuestions: [], sourceImage: tallImage },
+], { ...pastePrintOptions, imageWidthMm: 150, includeAnswers: false }));
+writeFileSync(new URL(`../outputs/${croppedImageFile}`, import.meta.url), exports.makeMistakesDocx([
+  { ...fixture, similarQuestions: [], questionBounds: [100, 100, 900, 900], sourceImage: tallImage },
+], { ...worksheetPrintOptions, imageWidthMm: 120, includeAnswers: true }));
+const { printImageRegion, printImageSegments } = printExports;
+for (const width of [60, 120, 160, 165]) {
+  const parts = printImageSegments(400, 2400, { ...pastePrintOptions, imageWidthMm: width });
+  assert.equal(parts[0].top, 0); assert.equal(parts.at(-1).bottom, 0);
+  assert(parts.every(p => p.widthMm === width && p.heightMm <= 220.02));
+  for (let i = 1; i < parts.length; i++) assert.equal(parts[i].top + parts[i - 1].bottom, 100000);
+  assert(Math.abs(parts.reduce((n, p) => n + p.heightMm, 0) - width * 6) < 0.001);
+}
+assert.equal(printImageRegion(400, 2400, [900, 0, 100, 900]).width, 400);
+assert.throws(() => exports.makeMistakesDocx([{ ...fixture, visualQuestion: true }]), /必须保留原题图片/);
+for (const archive of [{ archiveKind: "collection" }, { judgementSource: "manual" }]) {
+  assert(printExports.requiresPrintImage({ ...fixture, subject: "英语", question: "", ...archive }));
+  assert.throws(() => exports.makeMistakesDocx([{ ...fixture, ...archive }]), /必须保留原题图片/);
+}
+assert.throws(() => printImageSegments(0, 1), /尺寸无效/);
 assert(
   !/[\\/:*?"<>|\u0000-\u001f]/.test(
     exports.mistakeDocxFilename({ ...fixture, subject: '数/学:*?"<>|' }),
@@ -137,6 +179,23 @@ for i, path in enumerate(sys.argv[1:]):
             if name.endswith(('.xml', '.rels')): ET.fromstring(z.read(name))
         doc = ET.fromstring(z.read('word/document.xml'))
         text = '\n'.join(n.text or '' for n in doc.findall('.//w:t', ns))
+        if path.endswith(('mistake-long-image-segments.docx', 'mistake-cropped-image-segments.docx')):
+            a = {'a': 'http://schemas.openxmlformats.org/drawingml/2006/main'}
+            crops = doc.findall('.//a:srcRect', a)
+            extents = doc.findall('.//wp:extent', ns)
+            assert len(crops) > 1 and len(crops) == len(extents)
+            cropped = path.endswith('mistake-cropped-image-segments.docx')
+            width = 120 if cropped else 150
+            edge = 8800 if cropped else 0 # existing browser crop safety padding is 12/1000
+            assert int(crops[0].get('t')) == edge and int(crops[-1].get('b')) == edge
+            assert all(int(c.get('l')) == edge and int(c.get('r')) == edge for c in crops)
+            for prev, following in zip(crops, crops[1:]):
+                assert int(prev.get('b')) + int(following.get('t')) == 100000
+            assert all(int(e.get('cx')) == width * 36000 and int(e.get('cy')) <= 7920720 for e in extents)
+            assert len(doc.findall('.//w:pageBreakBefore', ns)) == len(crops)
+            assert len([n for n in z.namelist() if n.startswith('word/media/')]) == 1
+            assert ('参考答案与解析' in text) == cropped
+            continue
         if i >= 6:
             assert '错题本剪贴版' in text and '我的错因' in text and '裁剪线' in text
             assert doc.find('.//w:pgSz', ns).get('{'+ns['w']+'}w') == '11906'
@@ -214,7 +273,7 @@ const result = spawnSync(
   [
     "-c",
     python,
-    ...[...files, batchFile, imageFile, unitFile, pngFile, ...pasteFiles].map((name) =>
+    ...[...files, batchFile, imageFile, unitFile, pngFile, ...pasteFiles, longImageFile, croppedImageFile].map((name) =>
       fileURLToPath(new URL(`../outputs/${name}`, import.meta.url)),
     ),
   ],

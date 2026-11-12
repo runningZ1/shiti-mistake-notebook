@@ -5,6 +5,7 @@ import { isVisualQuestion, loadWordSourceImage, needsOriginalPicture } from "@/l
 import { parseMistakePrintOptions, type MistakePrintOptions } from "@/lib/mistake-print-options";
 
 type Row = {
+  archive_kind: "mistake" | "collection"; judgement_source: string;
   id: string; upload_id: string; subject: string; question: string; question_bounds: number[];
   incorrect_answer: string; correct_answer: string; reasoning: string; reflection: string; knowledge_point: string;
   page_number: number; source_name: string; created_at: string;
@@ -27,10 +28,10 @@ export async function GET(request: Request) {
   }
   let imageFailure = "";
   try {
-    const placeholders = ids.map((_, index) => `$${index + 2}`).join(",");
+    const placeholders = ids.map((_, index) => `$${index + 3}`).join(",");
     const { rows: results } = await query<Row>(
-      `SELECT id, upload_id, subject, question, question_bounds, incorrect_answer, correct_answer, reasoning, reflection, knowledge_point, page_number, source_name, created_at, similar_questions FROM mistakes WHERE user_id = $1 AND id IN (${placeholders})`,
-      [auth.user.userId, ...ids]);
+      `SELECT id, upload_id, subject, question, question_bounds, incorrect_answer, correct_answer, reasoning, reflection, knowledge_point, page_number, source_name, created_at, similar_questions, archive_kind, judgement_source FROM mistakes WHERE user_id = $1 AND profile_id = $2 AND removed_at IS NULL AND id IN (${placeholders})`,
+      [auth.user.userId, auth.profileId, ...ids]);
     if (results.length !== ids.length) return Response.json({ error: "部分错题不存在或无权访问" }, { status: 404, headers: { "Cache-Control": "private, no-store" } });
     const rows = new Map(results.map(row => [row.id, row]));
     const imageCache = new Map<string, ReturnType<typeof loadWordSourceImage>>();
@@ -46,7 +47,7 @@ export async function GET(request: Request) {
     const items = await Promise.all(ids.map(async (id, index) => {
       const row = rows.get(id)!;
       let sourceImage;
-      if (needsOriginalPicture(row.subject, row.question)) {
+      if (needsOriginalPicture(row.subject, row.question, row.archive_kind, row.judgement_source)) {
         try {
           sourceImage = await sourceFor(row);
         } catch {
@@ -56,7 +57,7 @@ export async function GET(request: Request) {
       }
       return {
         subject: row.subject, question: row.question, incorrectAnswer: row.incorrect_answer,
-        questionBounds: row.question_bounds,
+        questionBounds: row.question_bounds, archiveKind: row.archive_kind, judgementSource: row.judgement_source,
         correctAnswer: row.correct_answer, reasoning: row.reasoning, reflection: row.reflection, knowledgePoint: row.knowledge_point,
         pageNumber: row.page_number, sourceName: row.source_name, createdAt: row.created_at,
         similarQuestions: row.similar_questions,

@@ -1,0 +1,2 @@
+ALTER TABLE "uploads" ADD COLUMN "ocr_result" jsonb;--> statement-breakpoint
+ALTER TABLE "uploads" ADD CONSTRAINT "uploads_ocr_result_object" CHECK ("uploads"."ocr_result" IS NULL OR jsonb_typeof("uploads"."ocr_result") = 'object');

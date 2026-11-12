@@ -1,3 +1,4 @@
+import { imageStorage, storageConfigured } from "@/lib/storage";
 import { env } from "cloudflare:workers";
 import { authenticateAdmin } from "@/lib/api-guard";
 import { hashPassword } from "@/lib/auth";
@@ -142,10 +143,10 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   }
 
   if (keys.length > 0) {
-    if (!env.BUCKET) return fail("图片存储未绑定，账号已停用且未删除，请配置后重试", 503);
+    if (!storageConfigured() && !env.BUCKET) return fail("图片存储未绑定，账号已停用且未删除，请配置后重试", 503);
     try {
       for (let offset = 0; offset < keys.length; offset += 1000) {
-        await env.BUCKET.delete(keys.slice(offset, offset + 1000));
+        await imageStorage.delete(keys.slice(offset, offset + 1000));
       }
     } catch {
       // 这里中止是有意的：R2 删不掉就把账号留着，管理员可以重试。

@@ -1,7 +1,7 @@
 /** Editable Word worksheet. Uses standard OOXML and an uncompressed ZIP, with no network or runtime dependencies. */
 import { parseMath, splitMathText, type MathNode } from "./math-notation";
 import { kindForQuestion, practiceFormatLabels, practiceKindLabels, type PracticeQuestionFormat, type PracticeQuestionKind } from "./practice-blueprint";
-import type { MistakePrintOptions } from "./mistake-print-options";
+import { parseMistakePrintOptions, printOptionsParams, printImageRegion, printImageSegments, type MistakePrintOptions } from "./mistake-print-options";
 export type WorksheetMistake = {
   subject: string;
   question: string;
@@ -14,7 +14,10 @@ export type WorksheetMistake = {
   sourceName: string;
   createdAt: string;
   similarQuestions: { question: string; answer: string; explanation: string }[];
+  questionBounds?: number[];
   visualQuestion?: boolean;
+  archiveKind?: "mistake" | "collection";
+  judgementSource?: string;
   sourceImage?: { bytes: Uint8Array; width: number; height: number; fullPage: boolean; mime?: "image/jpeg" | "image/png" };
 };
 
@@ -137,21 +140,27 @@ function zip(entries: [string, string | Uint8Array][]): Uint8Array<ArrayBuffer> 
   return result;
 }
 
-function sourceDrawing(index: number, image: NonNullable<WorksheetMistake["sourceImage"]>, visual: boolean, paste = false): string {
-  // Paste pictures use the available width; only pictures taller than a printable page are reduced.
-  const maxWidth = paste ? 6_000_000 : 5_850_000;
-  const maxHeight = paste ? 7_800_000 : visual || image.fullPage ? 3_360_000 : 1_900_000;
-  const scale = Math.min(maxWidth / image.width, maxHeight / image.height);
-  const cx = Math.max(1, Math.round(image.width * scale));
-  const cy = Math.max(1, Math.round(image.height * scale));
-  return `<w:p><w:pPr><w:spacing w:before="40" w:after="40"/></w:pPr><w:r><w:drawing>` +
-    `<wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0">` +
-    `<wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${index}" name="原题图片 ${index}"/>` +
-    `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
-    `<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${index}" name="question-${index}.${image.mime === "image/png" ? "png" : "jpg"}"/><pic:cNvPicPr/></pic:nvPicPr>` +
-    `<pic:blipFill><a:blip r:embed="rIdImage${index}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
-    `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>` +
-    `</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
+function sourceDrawing(index: number, image: NonNullable<WorksheetMistake["sourceImage"]>, _visual: boolean, options?: MistakePrintOptions, bounds?: number[]): string {
+  const region = printImageRegion(image.width, image.height, image.fullPage ? bounds : undefined);
+  const segments = printImageSegments(region.width, region.height, options);
+  return segments.map((segment, part) => {
+    const cx = Math.round(segment.widthMm * 36000);
+    const cy = Math.round(segment.heightMm * 36000);
+    const top = Math.round(region.top + (100000 - region.top - region.bottom) * segment.top / 100000);
+    const bottom = Math.round(region.bottom + (100000 - region.top - region.bottom) * segment.bottom / 100000);
+    // One relationship/media object per original image. Each drawing clips a contiguous portion.
+    const drawingId = index * 1000 + part;
+    const page = segments.length > 1
+      ? `<w:p><w:pPr><w:pageBreakBefore/><w:spacing w:after="40"/></w:pPr><w:r><w:t>第 ${index} 题 · 原题图片 ${part + 1}/${segments.length} · ${segment.widthMm} mm 宽</w:t></w:r></w:p>` : "";
+    return page + `<w:p><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr><w:r><w:drawing>` +
+      `<wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0">` +
+      `<wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${drawingId}" name="原题图片 ${index} 分段 ${part + 1}"/>` +
+      `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+      `<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${drawingId}" name="question-${index}.${image.mime === "image/png" ? "png" : "jpg"}"/><pic:cNvPicPr/></pic:nvPicPr>` +
+      `<pic:blipFill><a:blip r:embed="rIdImage${index}"/><a:srcRect l="${region.left}" t="${top}" r="${region.right}" b="${bottom}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+      `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>` +
+      `</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
+  }).join("");
 }
 
 function recordedDate(value: string): string {
@@ -174,14 +183,14 @@ function reflectionBlock(item: WorksheetMistake, options: MistakePrintOptions): 
 
 function pasteQuestion(item: WorksheetMistake, index: number, options: MistakePrintOptions): string {
   const image = item.sourceImage;
-  const imageNote = image ? paragraphs(image.fullPage
+  const imageRegion = image ? printImageRegion(image.width, image.height, image.fullPage ? item.questionBounds : undefined) : null;
+  const wholePage = image?.fullPage && imageRegion?.left === 0 && imageRegion?.right === 0 && imageRegion?.top === 0 && imageRegion?.bottom === 0;
+  const imageNote = image ? paragraphs(wholePage
     ? "原题整页图片：未裁剪，请核对原题题号；原图中的答案、笔迹和批注可能一并打印。"
     : "原题区域图片：保留该区域原有答案、笔迹和批注，请核对题目完整性。", "Subtitle") : "";
-  const tooTall = image && image.height * (6_000_000 / image.width) > 7_800_000;
   const content = [
     paragraphs(item.question), imageNote,
-    ...(image ? [sourceDrawing(index + 1, image, Boolean(item.visualQuestion), true)] : []),
-    ...(tooTall ? [paragraphs("长图已等比适配单页以完整保留，不裁切图表；图内字号可能偏小。请在Word/WPS核对，必要时重新上传清晰局部图后打印。", "Subtitle")] : []),
+    ...(image ? [sourceDrawing(index + 1, image, Boolean(item.visualQuestion), options, item.questionBounds)] : []),
     paragraphs(`来源：${item.sourceName || "未记录来源"} · 原资料第 ${item.pageNumber} 页`, "Subtitle"),
     reflectionBlock(item, options),
     ...(options.includeSimilar ? item.similarQuestions.flatMap((similar, similarIndex) => [
@@ -194,6 +203,11 @@ function pasteQuestion(item: WorksheetMistake, index: number, options: MistakePr
   const lineCount = textParts.reduce((sum, text) => sum + text.split("\n").reduce((lines, line) => lines + Math.max(1, Math.ceil([...line].length / 28)), 0), 0);
   const short = !image && (!options.includeSimilar || !item.similarQuestions.length) && lineCount <= 10;
   const title = `第 ${index + 1} 题 · ${item.subject} · 整理日期（北京时间）：${recordedDate(item.createdAt) || "未记录"}`;
+  const region = image ? printImageRegion(image.width, image.height, image.fullPage ? item.questionBounds : undefined) : null;
+  if (region && printImageSegments(region.width, region.height, options).length > 1) {
+    return paragraphs(title, "Heading1") + content +
+      '<w:p><w:pPr><w:spacing w:before="150" w:after="150"/><w:pBdr><w:bottom w:val="dashed" w:sz="4" w:color="CCCCCC"/></w:pBdr></w:pPr><w:r><w:t>裁剪线</w:t></w:r></w:p>';
+  }
   return `<w:tbl><w:tblPr><w:tblW w:w="9638" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="40" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="40" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="9638"/></w:tblGrid>` +
     `<w:tr><w:trPr><w:tblHeader/><w:cantSplit/></w:trPr><w:tc><w:tcPr><w:tcW w:w="9638" w:type="dxa"/></w:tcPr>${paragraphs(title, "Heading1")}</w:tc></w:tr>` +
     `<w:tr><w:trPr>${short ? "<w:cantSplit/>" : ""}</w:trPr><w:tc><w:tcPr><w:tcW w:w="9638" w:type="dxa"/></w:tcPr>${content}</w:tc></w:tr></w:tbl>` +
@@ -210,8 +224,12 @@ export function makeMistakeDocx(
 /** One editable worksheet for the selected mistakes, with one shared answer section. */
 export function makeMistakesDocx(items: WorksheetMistake[], options?: MistakePrintOptions): Uint8Array<ArrayBuffer> {
   if (!items.length) throw new Error("请先选择错题");
+  if (options) options = parseMistakePrintOptions(printOptionsParams(options));
   items.forEach((item, index) => {
     const image = item.sourceImage;
+    if (!image && (item.archiveKind === "collection" || item.judgementSource === "manual" || item.visualQuestion || /原图题目|见题图/.test(item.question))) {
+      throw new Error(`第 ${index + 1} 题必须保留原题图片，请读取原图后再导出`);
+    }
     if (image && (!image.bytes.length || !Number.isFinite(image.width) || !Number.isFinite(image.height) || image.width <= 0 || image.height <= 0)) {
       throw new Error(`第 ${index + 1} 题原图不可读，请重新加载后重试`);
     }
@@ -232,8 +250,8 @@ export function makeMistakesDocx(items: WorksheetMistake[], options?: MistakePri
       paragraphs(single ? "一、原题" : `第 ${itemIndex + 1} 道错题 · ${item.subject} · ${item.knowledgePoint || "未标注知识点"}`, "Heading1"),
       paragraphs(item.question),
       ...(item.sourceImage ? [
-        paragraphs(item.sourceImage.fullPage ? "原题整页图片（旧题未记录裁剪区域，请核对题号）" : "原题图片（含公式或图表）", "Subtitle"),
-        sourceDrawing(itemIndex + 1, item.sourceImage, Boolean(item.visualQuestion)),
+        paragraphs(item.sourceImage.fullPage && !item.questionBounds?.length ? "原题整页图片（旧题未记录裁剪区域，请核对题号）" : "原题图片（含公式或图表）", "Subtitle"),
+        sourceDrawing(itemIndex + 1, item.sourceImage, Boolean(item.visualQuestion), options, item.questionBounds),
       ] : []),
       ...(item.sourceName ? [paragraphs(`来源：${item.sourceName} · 第 ${item.pageNumber} 页`, "Subtitle")] : []),
       writingSpace(2),
@@ -329,6 +347,7 @@ export function mistakeDocxFilename(item: WorksheetMistake, options?: MistakePri
 
 export function mistakesDocxFilename(items: WorksheetMistake[], options?: MistakePrintOptions): string {
   if (!items.length) throw new Error("请先选择错题");
+  if (options) options = parseMistakePrintOptions(printOptionsParams(options));
   if (options) {
     const dates = items.map(item => recordedDate(item.createdAt)).filter(Boolean).sort();
     const range = !dates.length ? "日期未记录" : dates[0] === dates[dates.length - 1] ? dates[0] : `${dates[0]}至${dates[dates.length - 1]}`;

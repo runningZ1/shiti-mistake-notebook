@@ -20,20 +20,20 @@ export async function POST(request: Request) {
   if (!aiConfigured()) return Response.json({ error: "AI 服务尚未配置" }, { status: 503 });
 
   try {
-    const { rows: profiles } = await query<{ unit_name: string; guide: KnowledgeGuide | null }>("SELECT unit_name, guide FROM knowledge_units WHERE user_id = $1 AND subject = $2 AND knowledge_point = $3",
-      [auth.user.userId, subject, point]);
+    const { rows: profiles } = await query<{ unit_name: string; guide: KnowledgeGuide | null }>("SELECT unit_name, guide FROM knowledge_units WHERE user_id = $1 AND subject = $2 AND knowledge_point = $3 AND profile_id = $4",
+      [auth.user.userId, subject, point, auth.profileId]);
     const profile = profiles[0];
     if (profile?.guide) {
       return Response.json({ guide: profile.guide, cached: true }, { headers: { "Cache-Control": "private, no-store" } });
     }
-    const { rows: results } = await query<Example>("SELECT question, incorrect_answer, correct_answer FROM mistakes WHERE user_id = $1 AND subject = $2 AND TRIM(knowledge_point) = $3 ORDER BY created_at DESC LIMIT 2",
-      [auth.user.userId, subject, point]);
+    const { rows: results } = await query<Example>("SELECT question, incorrect_answer, correct_answer FROM mistakes WHERE user_id = $1 AND subject = $2 AND TRIM(knowledge_point) = $3 AND profile_id = $4 AND removed_at IS NULL ORDER BY created_at DESC LIMIT 2",
+      [auth.user.userId, subject, point, auth.profileId]);
     const guide = await createKnowledgeGuide({
       subject, knowledgePoint: point, unitName: profile?.unit_name || "",
       examples: results.map(row => ({ question: row.question, incorrectAnswer: row.incorrect_answer, correctAnswer: row.correct_answer })),
     });
-    await query("INSERT INTO knowledge_units (user_id, subject, knowledge_point, unit_name, guide, updated_at) VALUES ($1, $2, $3, $4, $5::jsonb, $6) ON CONFLICT(user_id, subject, knowledge_point) DO UPDATE SET guide = CASE WHEN knowledge_units.unit_name = excluded.unit_name THEN excluded.guide ELSE knowledge_units.guide END, updated_at = excluded.updated_at",
-      [auth.user.userId, subject, point, profile?.unit_name || "", JSON.stringify(guide), new Date().toISOString()]);
+    await query("INSERT INTO knowledge_units (user_id, subject, knowledge_point, unit_name, guide, updated_at, profile_id) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7) ON CONFLICT(user_id, profile_id, subject, knowledge_point) DO UPDATE SET guide = CASE WHEN knowledge_units.unit_name = excluded.unit_name THEN excluded.guide ELSE knowledge_units.guide END, updated_at = excluded.updated_at",
+      [auth.user.userId, subject, point, profile?.unit_name || "", JSON.stringify(guide), new Date().toISOString(), auth.profileId]);
     return Response.json({ guide, cached: false }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     console.error("Knowledge guide failed", error);

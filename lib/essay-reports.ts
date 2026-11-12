@@ -1,3 +1,4 @@
+import { requireProfile } from "@/lib/profiles";
 import { query } from "@/db/client";
 import { parseEssayReport, type EssayDetail, type EssaySummary } from "@/lib/essay-types";
 
@@ -13,15 +14,17 @@ function summary(row: Pick<EssayRow, "id" | "prompt_text" | "original_text" | "c
   };
 }
 
-export async function listEssayReports(userId: string): Promise<EssaySummary[]> {
+export async function listEssayReports(userId: string, fixedProfileId?: string): Promise<EssaySummary[]> {
+  const { id: profileId } = await requireProfile(userId, fixedProfileId);
   const { rows } = await query<Pick<EssayRow, "id" | "prompt_text" | "original_text" | "created_at">>(
-    "SELECT id, prompt_text, original_text, created_at FROM essay_reports WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100", [userId]);
+    "SELECT id, prompt_text, original_text, created_at FROM essay_reports WHERE user_id = $1 AND profile_id = $2 ORDER BY created_at DESC LIMIT 100", [userId, profileId]);
   return rows.map(summary);
 }
 
-export async function getEssayReport(id: string, userId: string): Promise<EssayDetail | null> {
+export async function getEssayReport(id: string, userId: string, fixedProfileId?: string): Promise<EssayDetail | null> {
+  const { id: profileId } = await requireProfile(userId, fixedProfileId);
   const { rows } = await query<EssayRow>(
-    "SELECT id, user_id, prompt_text, original_text, grade_level, report_json, created_at FROM essay_reports WHERE id = $1 AND user_id = $2", [id, userId]);
+    "SELECT id, user_id, prompt_text, original_text, grade_level, report_json, created_at FROM essay_reports WHERE id = $1 AND user_id = $2 AND profile_id = $3", [id, userId, profileId]);
   const row = rows[0];
   if (!row) return null;
   return {
@@ -31,9 +34,10 @@ export async function getEssayReport(id: string, userId: string): Promise<EssayD
 }
 
 export async function insertEssayReport(input: {
-  id: string; userId: string; promptText: string; originalText: string;
+  id: string; userId: string; profileId?: string; promptText: string; originalText: string;
   gradeLevel: string; reportJson: string; createdAt: string;
 }): Promise<void> {
-  await query("INSERT INTO essay_reports (id, user_id, prompt_text, original_text, grade_level, report_json, created_at) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)",
-    [input.id, input.userId, input.promptText, input.originalText, input.gradeLevel, input.reportJson, input.createdAt]);
+  const { id: profileId } = await requireProfile(input.userId, input.profileId);
+  await query("INSERT INTO essay_reports (id, user_id, prompt_text, original_text, grade_level, report_json, created_at, profile_id) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)",
+    [input.id, input.userId, input.promptText, input.originalText, input.gradeLevel, input.reportJson, input.createdAt, profileId]);
 }

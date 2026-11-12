@@ -5,11 +5,12 @@ import { ArrowRight, BookOpen, CheckCircle2, ChevronDown, Lightbulb, LoaderCircl
 import { buildKnowledgeMap, type KnowledgeEvidence, type KnowledgeNode } from "@/lib/knowledge-map";
 import { knowledgeKey, normalizeKnowledgePoint, type KnowledgeGuide, type KnowledgeProfile } from "@/lib/knowledge-types";
 import type { PracticeSummary } from "@/lib/practice-types";
+import { roundKnowledgeEvidence, type LearningEvidenceResponse } from '@/lib/learning-evidence';
 import MathText from "./math-text";
 import "./study-tools.css";
 
 type Mistake = {
-  id: string; uploadId: string; subject: string; knowledgePoint: string;
+  id: string; uploadId: string; subject: string; knowledgePoint: string; archiveKind?: 'mistake' | 'collection';
   question: string; incorrectAnswer: string; correctAnswer: string; reasoning: string; createdAt: string;
 };
 
@@ -51,6 +52,10 @@ export default function KnowledgeMap({ mistakes, papers, initialSubject, initial
   const [loadingProfiles, setLoadingProfiles] = useState(true);
   const [profileError, setProfileError] = useState("");
   const [loadVersion, setLoadVersion] = useState(0);
+  const [roundEvidence,setRoundEvidence]=useState<LearningEvidenceResponse|null>(null);
+  const [evidenceError,setEvidenceError]=useState('');
+  const [loadingEvidence,setLoadingEvidence]=useState(true);
+  const evidenceProfile=useRef<string|null>(null);
   const [savedMessage, setSavedMessage] = useState("");
   const errorRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (error) errorRef.current?.focus(); }, [error]);
@@ -69,22 +74,25 @@ export default function KnowledgeMap({ mistakes, papers, initialSubject, initial
     return () => { cancelled = true; };
   }, [loadVersion]);
 
+  useEffect(()=>{
+    let cancelled=false;
+    fetch('/api/learning?kind=evidence',{headers:evidenceProfile.current?{'X-Shiti-Profile':evidenceProfile.current}:{}}).then(async response=>{
+      if(redirectIfUnauthorized(response))return null;
+      const data=await response.json() as LearningEvidenceResponse;
+      if(!response.ok)throw new Error(data.error||'作答轮次证据加载失败');return data;
+    }).then(data=>{if(!cancelled&&data){evidenceProfile.current=data.profileId;setRoundEvidence(data);setEvidenceError('');}})
+      .catch(e=>{if(!cancelled)setEvidenceError(e instanceof Error?e.message:'作答轮次证据加载失败');})
+      .finally(()=>{if(!cancelled)setLoadingEvidence(false);});
+    return()=>{cancelled=true;};
+  },[loadVersion]);
+  const rounds=useMemo(()=>roundEvidence?[...roundEvidence.attempts,...roundEvidence.legacyPapers]:[],[roundEvidence]);
   const evidence = useMemo<KnowledgeEvidence[]>(() => [
-    ...mistakes.map(item => ({
+    ...mistakes.filter(item=>item.archiveKind!=='collection').map(item => ({
       id: item.id, subject: item.subject, knowledgePoint: item.knowledgePoint,
       sourceId: item.uploadId, source: "mistake" as const, createdAt: item.createdAt,
     })),
-    ...papers.flatMap(paper => [
-      ...paper.wrongKnowledgePoints.map((point, index) => ({
-        id: paper.id + ":wrong:" + index, subject: paper.subject, knowledgePoint: point,
-        sourceId: paper.id, source: "practice" as const, createdAt: paper.gradedAt || paper.createdAt,
-      })),
-      ...(paper.correctKnowledgePoints || []).map((point, index) => ({
-        id: paper.id + ":correct:" + index, subject: paper.subject, knowledgePoint: point,
-        sourceId: paper.id, source: "practice_correct" as const, createdAt: paper.gradedAt || paper.createdAt,
-      })),
-    ]),
-  ], [mistakes, papers]);
+    ...roundKnowledgeEvidence(rounds),
+  ], [mistakes, rounds]);
   const nodes = useMemo(() => buildKnowledgeMap(evidence), [evidence]);
   const profilesByKey = new Map(profiles.map(item => [knowledgeKey(item.subject, item.knowledgePoint), item]));
   const suggestedUnits = new Map<string, Set<string>>();
@@ -110,8 +118,9 @@ export default function KnowledgeMap({ mistakes, papers, initialSubject, initial
   const unitDraft = selected ? (unitDrafts[selected.id] ?? selectedProfile?.unitName ?? inferredUnit(selected)) : "";
   const selectedUnitName = selected ? unitFor(selected) : "";
   const relatedMistakes = selected ? mistakes.filter(item =>
-    item.subject === selected.subject && normalizeKnowledgePoint(item.knowledgePoint) === selected.name
+    item.archiveKind!=='collection' && item.subject === selected.subject && normalizeKnowledgePoint(item.knowledgePoint) === selected.name
   ).slice(0, 3) : [];
+  const selectedRounds=selected?rounds.filter(r=>r.subject===selected.subject&&(r.questions.some(q=>normalizeKnowledgePoint(q.knowledgePoint||'')===selected.name)||r.grading.some(g=>normalizeKnowledgePoint(g.knowledgePoint||'')===selected.name))):[];
   const focus = subjectNodes.slice(0, 3);
 
   function selectPoint(node: KnowledgeNode, resetUnitFilter = false) {
@@ -173,10 +182,13 @@ export default function KnowledgeMap({ mistakes, papers, initialSubject, initial
     <section className="page-intro"><span className="section-kicker">KNOWLEDGE MAP</span><h1>知识图谱</h1><p>从错题证据找到学习重点，先理解概念，再用练习验证。</p></section>
     {error && <div className="practice-error" role="alert" tabIndex={-1} ref={errorRef}>{error}</div>}
     {profileError && <div className="tool-notice tool-notice-error" role="alert"><span>{profileError}。单元归属与概念提示可能尚未加载。</span><button type="button" onClick={() => { setLoadingProfiles(true); setProfileError(""); setLoadVersion(value => value + 1); }}>重新加载</button></div>}
+    {evidenceError&&<div className="tool-notice tool-notice-error" role="alert"><span>{evidenceError}。未将最新 grading 当作轮次历史回退。</span><button type="button" onClick={()=>{setLoadingEvidence(true);setLoadVersion(v=>v+1);}}>重新加载作答证据</button></div>}
+    {loadingEvidence&&<p role="status">正在加载独立作答轮次…</p>}
+    {roundEvidence?.truncated&&<p className="tool-notice">仅展示最近 {roundEvidence.limit} 个作答轮次及最多 {roundEvidence.limit} 份无轮次的历史卷；以下统计仅覆盖展示范围。</p>}
     {loadingProfiles && <p className="tool-status" role="status"><LoaderCircle size={16} className="spin" />正在加载单元归属与概念提示…</p>}
     <p className="tool-announcement" role="status">{savedMessage}</p>
     {!nodes.length ? <div className="empty-state tool-empty"><Network size={36} /><h2>从第一道错题开始</h2><p>上传并归档错题，或完成练习批改后，这里会整理真实的知识点记录。</p></div> : <>
-      <div className="knowledge-intro"><Lightbulb size={17} /><span>优先级依据错误次数与作业来源；“练习做对”也只是最近一次练习的记录，不能推算真实掌握率。</span></div>
+      <div className="knowledge-intro"><Lightbulb size={17} /><span>优先级依据错误次数与作业来源；每个作答轮次单独计来源；正确记录只反映该轮作答，不推算掌握率。生成和打印不计入。</span></div>
       <div className="knowledge-subjects" role="group" aria-label="按科目查看知识点">
         {["全部科目", ...subjects].map(item => <button type="button" key={item} aria-pressed={selectedSubject === item} className={selectedSubject === item ? "active" : ""} onClick={() => { setSelectedSubject(item); setSelectedUnit("全部单元"); setSelectedId(""); setOpenUnit(null); setSavedMessage(""); }}>{item}</button>)}
       </div>
@@ -203,6 +215,11 @@ export default function KnowledgeMap({ mistakes, papers, initialSubject, initial
             <div className="knowledge-unit-editor"><label htmlFor="knowledge-unit-name">确认所属单元</label><div><input id="knowledge-unit-name" list="known-knowledge-units" value={unitDraft} onChange={event => { setSavedMessage(""); setUnitDrafts(current => ({ ...current, [selected.id]: event.target.value })); }} disabled={saving || loadingProfiles || Boolean(profileError)} maxLength={80} placeholder="手动填写单元名称" /><datalist id="known-knowledge-units">{units.filter(name => name !== unassigned).map(name => <option value={name} key={name} />)}</datalist><button type="button" onClick={saveUnit} disabled={saving || loadingProfiles || Boolean(profileError) || unitDraft.trim() === (selectedProfile?.unitName || "")}>{saving ? <LoaderCircle size={15} className="spin" /> : <CheckCircle2 size={15} />}{saving ? "保存中" : "保存归属"}</button></div><small>归属由你确认；留空可归入“待归类”。</small></div>
             <div className="knowledge-guide" aria-busy={generating}><h3><Lightbulb size={17} />先理解概念</h3>{selectedProfile?.guide ? <><strong>核心概念</strong><p><MathText value={selectedProfile.guide.coreIdea} /></p><strong>可能的误区</strong><p><MathText value={selectedProfile.guide.commonMistake} /></p><strong>先做哪一步</strong><p><MathText value={selectedProfile.guide.firstStep} /></p><small>AI 提示仅供学习参考，请结合课本和老师讲解核对。</small></> : <><p>先回想定义与关键步骤，再核对下方错题。需要帮助时可生成概念提示。</p><button type="button" onClick={generateGuide} disabled={generating || loadingProfiles || Boolean(profileError) || trialExpired || aiReady !== true}>{generating ? <LoaderCircle size={15} className="spin" /> : <Sparkles size={15} />}{generating ? "正在生成概念提示…" : trialExpired ? "体验已到期" : "生成概念提示"}</button>{(trialExpired || aiReady !== true) && <small>{trialExpired ? "可继续阅读已保存内容；请联系管理员开通新生成。" : aiReady === null ? "正在确认 AI 服务状态…" : "AI 服务暂不可用，请稍后重试或联系管理员。"}</small>}</>}</div>
             {relatedMistakes.length > 0 && <div className="knowledge-examples"><h3>相关错题证据</h3>{relatedMistakes.map(item => <button type="button" key={item.id} onClick={() => onOpenMistake(item)}><BookOpen size={16} /><span><MathText value={item.question} /><small>查看原题、答案与解析</small></span><ArrowRight size={14} /></button>)}</div>}
+            <section className="knowledge-examples" aria-label="独立作答轮次来源"><h3>作答轮次与来源证据</h3>{selectedRounds.length?selectedRounds.map(r=><details key={r.id}><summary>{r.unitName} · {r.legacy?'历史 grading（无独立轮次）':r.source} · {r.status} · {r.gradingSource||'未评分'} · {new Date(r.completedAt||r.startedAt).toLocaleString('zh-CN')}</summary><p>轮次来源：{r.id}{r.sourceId?` · 原始来源 ${r.sourceId}`:''}</p>{r.questions.map((q,index)=>{
+              const grade=r.grading.find(g=>g.index===index);
+              if(normalizeKnowledgePoint(grade?.knowledgePoint||q.knowledgePoint||'')!==selected.name)return null;
+              return <div key={index}><p><MathText value={q.question}/></p><p>实际作答：<MathText value={r.answers[index]||'未作答'}/></p><p>判定：{grade?.verdict||'未评分'} · {grade?.comment||'无评分结论'}</p></div>;
+            })}{r.error&&<p role="alert">{r.error}</p>}<a href={`/?view=practice&paper=${encodeURIComponent(r.paperId)}${r.legacy?'':`&attempt=${encodeURIComponent(r.id)}#attempt-${encodeURIComponent(r.id)}`}`}>打开该卷{r.legacy?'历史报告':'作答轮次'}</a></details>):<p>当前知识点还没有可追溯的作答轮次。</p>}</section>
             <button type="button" className="knowledge-practice-cta" onClick={() => onPractice(selected.subject, selectedUnitName === unassigned ? selected.name : selectedUnitName, selected.name)}><Sparkles size={16} />做 3 题概念小测<ArrowRight size={15} /></button>
           </>}
         </aside>

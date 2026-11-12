@@ -5,6 +5,7 @@ import { isVisualQuestion, loadWordSourceImage, needsOriginalPicture } from "@/l
 import { parseMistakePrintOptions, type MistakePrintOptions } from "@/lib/mistake-print-options";
 
 type MistakeRow = {
+  archive_kind: "mistake" | "collection"; judgement_source: string;
   upload_id: string;
   subject: string;
   question: string;
@@ -33,13 +34,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
   try {
     const { rows } = await query<MistakeRow>(
-      "SELECT upload_id, subject, question, question_bounds, incorrect_answer, correct_answer, reasoning, reflection, knowledge_point, page_number, source_name, created_at, similar_questions FROM mistakes WHERE id = $1 AND user_id = $2",
-      [(await params).id, auth.user.userId]);
+      "SELECT upload_id, subject, question, question_bounds, incorrect_answer, correct_answer, reasoning, reflection, knowledge_point, page_number, source_name, created_at, similar_questions, archive_kind, judgement_source FROM mistakes WHERE id = $1 AND user_id = $2 AND profile_id = $3 AND removed_at IS NULL",
+      [(await params).id, auth.user.userId, auth.profileId]);
     const row = rows[0];
     if (!row) return Response.json({ error: "错题不存在或无权访问" }, { status: 404, headers: { "Cache-Control": "private, no-store" } });
 
     let sourceImage;
-    if (needsOriginalPicture(row.subject, row.question)) {
+    if (needsOriginalPicture(row.subject, row.question, row.archive_kind, row.judgement_source)) {
       try {
         sourceImage = await loadWordSourceImage(auth.user.userId, row.upload_id, row.page_number);
       } catch {
@@ -50,7 +51,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const item = {
       subject: row.subject,
       question: row.question,
-      questionBounds: row.question_bounds,
+      questionBounds: row.question_bounds, archiveKind: row.archive_kind, judgementSource: row.judgement_source,
       incorrectAnswer: row.incorrect_answer,
       correctAnswer: row.correct_answer,
       reasoning: row.reasoning,

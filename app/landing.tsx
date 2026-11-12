@@ -23,7 +23,7 @@ export default function Landing() {
         <div className={styles.heroCopy}>
           <span className={styles.offer}><Sparkles size={15} aria-hidden="true" />新用户免费体验 7 天</span>
           <h1 id="landing-title">把作业拍下来，<br /><em>把错题真正弄明白。</em></h1>
-          <p>已批改的试卷，帮你找出错题；还没批改的作业，先逐题判定，再整理答案、思路与知识点。</p>
+          <p>先核对识别出的题目与作答。已批改试卷可人工选题归档，未批改作业可在确认后分析；不会做的题也能收藏、打印和复习。</p>
           <div className={styles.heroActions}><a className={styles.primary} href="/register">注册并开始体验 <ArrowRight size={18} aria-hidden="true" /></a><a className={styles.secondary} href="/login">已有账号，去登录</a></div>
           <div className={styles.trust}><span><CheckCircle2 size={15} aria-hidden="true" />注册后即可开始</span><span><ShieldCheck size={15} aria-hidden="true" />个人账号管理错题</span></div>
         </div>

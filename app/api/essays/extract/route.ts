@@ -1,5 +1,6 @@
+import { ocrConfigured, OcrError } from "@/lib/baidu-ocr";
 import { authenticateForAi } from "@/lib/api-guard";
-import { aiConfigured, extractEssay } from "@/lib/ai";
+import { extractEssay } from "@/lib/ai";
 import { isSameOriginRequest } from "@/lib/auth";
 import { EssayImageError, readEssayImages } from "@/lib/essay-images";
 
@@ -9,7 +10,7 @@ export async function POST(request: Request) {
   if (!isSameOriginRequest(request)) return Response.json({ error: "请求来源不被允许" }, { status: 403 });
   const auth = await authenticateForAi();
   if ("response" in auth) return auth.response;
-  if (!aiConfigured()) return Response.json({ error: "AI 服务尚未配置" }, { status: 503 });
+  if (!ocrConfigured()) return Response.json({ error: "百度试卷切题识别尚未配置" }, { status: 503 });
 
   try {
     const form = await request.formData();
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
     return Response.json({ extraction }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     if (error instanceof EssayImageError) return Response.json({ error: error.message }, { status: 400 });
-    console.error("Essay extraction failed", error);
-    return Response.json({ error: error instanceof Error ? error.message : "作文识别失败，请重试" }, { status: 500 });
+    console.error("Essay extraction failed");
+    return Response.json({ error: error instanceof Error ? error.message : "作文识别失败，请重试" }, { status: error instanceof OcrError ? error.status : 500 });
   }
 }

@@ -1,0 +1,19 @@
+{
+  "status": "frozen",
+  "scope": "G01-G04,H02-H03",
+  "files": {
+    "lib/learning-history.ts": "6d01669438d8ca91090c5949d9debf5cfdb7726f7f23b4d088d7edb8afd57c45",
+    "db/migrations/0010_learning_history.sql": "124d87412e487450dae74f8fcd4b63e79ceb3429b0217321a3294984e1bce313",
+    "db/learning-schema.ts": "7e5680e1b3196762747c6497002fd811342fba78da7f2f5058c12f119683fd7e",
+    "app/api/learning/route.ts": "16a12ba330072f6d22474a3e45a439b97216a7ab0ff02a8ae9dc8c55f0ae4546",
+    "app/api/learning/retries/route.ts": "61d5ff1cf43c6952aacebe8a0c8407abd6f8123e8c3622a64140158896b81f5e",
+    "app/unit-practice.tsx": "02c63ad9d92fdcfc93d199929b37436c03854d02753caec635e9284416d8f0d8",
+    "app/essay-analysis.tsx": "dd0a9c8829990329f04a50aa321dfb504ff4af3cdf95391f793bb3c702890fe6",
+    "app/api/practice-papers/[id]/grade/route.ts": "cb87d4ef7d63a1422984e28f2ad6c3134f9137431275b7368bb0b2e4e771aff6",
+    "app/api/essays/route.ts": "9ee1e195378f47206588c7ad0674913e9f9a62c899c4ef52a419c9135da8a648",
+    "scripts/learning-history-loader.mjs": "5118d69bf807256d8270ee0b3acb8897c027205c9ca68dbeffdf20b13d0f1482",
+    "scripts/learning-history.verify.mjs": "e630427ef7ff3e149901c56dfcd3e071e651c70e8fde5086ace264bdccd43cac",
+    "lib/learning-evidence.ts": "54035392f33cd4e3c452d638adabb9b7b4a5fa63d50b21033f08bdb4128db5b8",
+    "app/knowledge-map.tsx": "8b32a8bfe187dad647117cf0db79c06dfdf33b13795efe3d883792d387fff83f"
+  }
+}

@@ -1,7 +1,7 @@
 // DATABASE_URL、DeepSeek API Key 与 SESSION_SECRET 存放于 .dev.vars（权限 600），
 // 由 Wrangler 的 --env-file 在启动时加载。
 // vinext/Workers 通过 Wrangler 本地运行，业务数据库连接真实 PostgreSQL；
-// R2 图片数据持久化在 /opt/shiti-mistake-notebook/.wrangler/state。
+// 新图片保存在远端私有R2，.wrangler/state只兼容历史对象。
 module.exports = {
   apps: [{
     name: 'shiti-notebook',
@@ -28,5 +28,13 @@ module.exports = {
     exec_mode: 'fork',
     autorestart: true,
     max_memory_restart: '1G',
+  }, {
+    name: 'shiti-processing-worker',
+    script: '/root/.nvm/versions/node/v24.18.0/bin/node',
+    interpreter: 'none',
+    args: '--env-file=/opt/shiti-mistake-notebook/.dev.vars scripts/processing-worker.mjs',
+    cwd: '/opt/shiti-mistake-notebook',
+    env: { NODE_ENV: 'production', TASK_WORKER_URL: 'http://127.0.0.1:3105/api/tasks/run' },
+    instances: 1, exec_mode: 'fork', autorestart: true, max_memory_restart: '256M',
   }],
 };

@@ -37,6 +37,10 @@ set +a
 [ -n "${SESSION_SECRET:-}" ] || fail ".dev.vars 缺少 SESSION_SECRET"
 [ "${#SESSION_SECRET}" -ge 32 ] || fail "SESSION_SECRET 短于 32 字符"
 [ "${TRUST_OAI_HEADERS:-}" != "1" ] || fail "生产环境禁止 TRUST_OAI_HEADERS=1"
+for key in R2_ACCOUNT_ID R2_BUCKET_NAME R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY BAIDU_OCR_API_KEY BAIDU_OCR_SECRET_KEY TASK_WORKER_SECRET; do
+  [ -n "${!key:-}" ] || fail ".dev.vars 缺少 $key"
+done
+[ "${#TASK_WORKER_SECRET}" -ge 32 ] || fail "TASK_WORKER_SECRET 短于 32 字符"
 for key in SHITI_BOOTSTRAP_USER SHITI_BOOTSTRAP_PASSWORD SHITI_DEFAULT_USER SHITI_DEFAULT_PASSWORD; do
   [ -n "${!key:-}" ] || fail ".deploy.vars 缺少 $key"
 done
@@ -49,7 +53,16 @@ npm run build
 [ -f dist/server/wrangler.json ] || fail "构建产物 wrangler.json 缺失"
 
 printf '==> 应用 PostgreSQL 迁移\n'
+umask 077
+BACKUP_DIR="$REPO/work/deployment-backups/$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p "$BACKUP_DIR"
+node scripts/deployment-data.mjs backup "$BACKUP_DIR"
+cp .dev.vars .deploy.vars "$BACKUP_DIR/"
+tar -czf "$BACKUP_DIR/legacy-objects.tar.gz" .wrangler/state
+tar -tzf "$BACKUP_DIR/legacy-objects.tar.gz" > /dev/null
+pass "数据库与历史图片备份完成：$BACKUP_DIR"
 node scripts/migrate-postgres.mjs
+node scripts/deployment-data.mjs verify "$BACKUP_DIR"
 printf '==> 初始化并核对真实账号\n'
 node scripts/seed-default-accounts.mjs
 
@@ -76,6 +89,14 @@ for _ in $(seq 1 30); do
   sleep 2
 done
 [ "$ready" = "1" ] || fail "应用未在 60 秒内就绪"
+
+printf '==> 启动持久任务执行器\n'
+if pm2 describe shiti-processing-worker > /dev/null 2>&1; then
+  pm2 restart ecosystem.config.cjs --only shiti-processing-worker --update-env
+else
+  pm2 start ecosystem.config.cjs --only shiti-processing-worker
+fi
+pm2 save
 
 umask 077
 mkdir -p "$REPO/work"
@@ -111,6 +132,10 @@ login "$ADMIN_USER" "$ADMIN_PASSWORD" "$CHECK_DIR/admin.cookies"
 login "$USER_NAME" "$USER_PASSWORD" "$CHECK_DIR/user.cookies"
 expect_code 200 /api/mistakes -b "$CHECK_DIR/admin.cookies"
 expect_code 200 /api/mistakes -b "$CHECK_DIR/user.cookies"
+expect_code 200 /api/uploads -b "$CHECK_DIR/user.cookies"
+expect_code 200 /api/profiles -b "$CHECK_DIR/user.cookies"
+expect_code 200 /api/workspace -b "$CHECK_DIR/user.cookies"
+expect_code 200 /api/learning -b "$CHECK_DIR/user.cookies"
 expect_code 200 /api/admin/users -b "$CHECK_DIR/admin.cookies"
 expect_code 403 /api/admin/users -b "$CHECK_DIR/user.cookies"
 expect_code 200 /admin -b "$CHECK_DIR/admin.cookies"

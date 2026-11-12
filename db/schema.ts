@@ -1,4 +1,5 @@
-import { check, foreignKey, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { check, foreignKey, index, integer, date, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { learningProfiles } from "./profile-schema";
 import { sql } from "drizzle-orm";
 
 const time = (name: string) => timestamp(name, { withTimezone: true, mode: "string" });
@@ -28,21 +29,39 @@ export const users = pgTable("users", {
 export const uploads = pgTable("uploads", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  profileId: text("profile_id").notNull().references(() => learningProfiles.id),
   subject: text("subject").notNull(),
+  title: text("title").notNull().default(""),
+  homeworkDate: date("homework_date"),
+  gradeLevel: text("grade_level").notNull().default(""),
+  originalSubject: text("original_subject"),
+  intent: text("intent").notNull().default("marked"),
+  requestKey: text("request_key"), photoHash: text("photo_hash"),
+  pageMetadata: jsonb("page_metadata").notNull().default([]),
   fileKeys: jsonb("file_keys").$type<string[]>().notNull(),
   fileNames: jsonb("file_names").$type<string[]>().notNull(),
+  ocrResult: jsonb("ocr_result").$type<{ provider: string; pages: import("../lib/baidu-ocr").OcrPage[] }>(),
+  analysisResult: jsonb("analysis_result").$type<Omit<import("../lib/ai").Analysis, "mistakes">>(),
+  analysisStatus: text("analysis_status").notNull().default("completed"),
+  analysisError: text("analysis_error"),
+  analysisStartedAt: time("analysis_started_at"),
+  analysisAttemptId: text("analysis_attempt_id"),
   createdAt: time("created_at").notNull().defaultNow(),
 }, table => [
   uniqueIndex("uploads_id_user_idx").on(table.id, table.userId),
   index("uploads_user_created_idx").on(table.userId, table.createdAt, table.id),
   check("uploads_file_keys_array", sql`jsonb_typeof(${table.fileKeys}) = 'array'`),
   check("uploads_file_names_array", sql`jsonb_typeof(${table.fileNames}) = 'array'`),
+  check("uploads_ocr_result_object", sql`${table.ocrResult} IS NULL OR jsonb_typeof(${table.ocrResult}) = 'object'`),
+  check("uploads_analysis_result_object", sql`${table.analysisResult} IS NULL OR jsonb_typeof(${table.analysisResult}) = 'object'`),
+  check("uploads_analysis_status_check", sql`${table.analysisStatus} IN ('processing','completed','failed')`),
 ]);
 
 // 图片内容写入之前持久保存 multipart 标识，删除账号时据此中止上传。
 export const uploadObjects = pgTable("upload_objects", {
   key: text("key").primaryKey(),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  profileId: text("profile_id").notNull().references(() => learningProfiles.id),
   multipartId: text("multipart_id").notNull(),
 }, table => [index("upload_objects_user_idx").on(table.userId)]);
 
@@ -50,7 +69,11 @@ export const mistakes = pgTable("mistakes", {
   id: text("id").primaryKey(),
   uploadId: text("upload_id").notNull().references(() => uploads.id, { onDelete: "cascade" }),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  profileId: text("profile_id").notNull().references(() => learningProfiles.id),
   subject: text("subject").notNull(),
+  removedAt: time("removed_at"), sourceQuestionId: text("source_question_id"),
+  questionVersion: integer("question_version"), archiveKind: text("archive_kind").notNull().default("mistake"),
+  judgementSource: text("judgement_source").notNull().default("legacy"),
   question: text("question").notNull(),
   // 题目在原图上的区域，千分比坐标 [left, top, right, bottom]；旧数据留空。
   questionBounds: jsonb("question_bounds").notNull().default([]),
@@ -77,6 +100,7 @@ export const mistakes = pgTable("mistakes", {
 export const practicePapers = pgTable("practice_papers", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  profileId: text("profile_id").notNull().references(() => learningProfiles.id),
   subject: text("subject").notNull(),
   unitName: text("unit_name").notNull(),
   gradeLevel: text("grade_level").notNull().default(""),
@@ -89,16 +113,18 @@ export const practicePapers = pgTable("practice_papers", {
 
 export const knowledgeUnits = pgTable("knowledge_units", {
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  profileId: text("profile_id").notNull().references(() => learningProfiles.id),
   subject: text("subject").notNull(),
   knowledgePoint: text("knowledge_point").notNull(),
   unitName: text("unit_name").notNull().default(""),
   guide: jsonb("guide"),
   updatedAt: time("updated_at").notNull().defaultNow(),
-}, table => [primaryKey({ columns: [table.userId, table.subject, table.knowledgePoint] })]);
+}, table => [primaryKey({ columns: [table.userId, table.profileId, table.subject, table.knowledgePoint] })]);
 
 export const essayReports = pgTable("essay_reports", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  profileId: text("profile_id").notNull().references(() => learningProfiles.id),
   promptText: text("prompt_text").notNull().default(""),
   originalText: text("original_text").notNull(),
   gradeLevel: text("grade_level").notNull().default(""),
@@ -154,3 +180,8 @@ export const paymentDeliveries = pgTable("payment_deliveries", {
   paidEndsAt: time("paid_ends_at").notNull(),
   createdAt: time("created_at").notNull().defaultNow(),
 });
+
+export * from "./profile-schema";
+export * from "./question-schema";
+export * from "./learning-schema";
+export * from "./draft-schema";

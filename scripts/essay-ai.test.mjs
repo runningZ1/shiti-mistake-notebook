@@ -43,21 +43,13 @@ const report = {
   uncertaintyNote: "",
 };
 
-test("essay extraction keeps student text and teacher marks separate", async () => {
-  const extraction = { promptText: "Introduce your family.", essayText: essay, uncertainNote: "", teacherMarksNote: "动词有批注" };
-  const { exports, requests } = ai(extraction);
-  const result = await exports.extractEssay([{ mime: "image/jpeg", base64: "abc" }], "My Family");
-  assert.equal(result.essayText, essay);
-  assert.equal(result.teacherMarksNote, "动词有批注");
-  assert.equal(requests[0].text.format.name, "essay_extraction");
-  assert.equal(requests[0].input[0].content[1].type, "input_image");
-});
-
 test("essay report quotes only confirmed original sentences", async () => {
   const { exports, requests } = ai(report);
   const result = await exports.analyzeEssay({ confirmedText: essay, promptText: "Introduce your family.", gradeLevel: "七年级", images: [{ mime: "image/jpeg", base64: "abc" }] });
   assert.equal(result.sentenceEdits[0].original, "He play football every day.");
   assert.equal(requests[0].text.format.name, "essay_report");
+  assert.ok(requests[0].input[0].content.every(item => item.type === "input_text"));
+  assert.equal(result.handwriting.assessable, false);
   assert.match(requests[0].input[0].content[0].text, /确认后的原文/);
   const fabricated = ai({ ...report, sentenceEdits: [{ ...report.sentenceEdits[0], original: "He likes basketball." }] });
   await assert.rejects(fabricated.exports.analyzeEssay({ confirmedText: essay, promptText: "Introduce your family.", gradeLevel: "", images: [] }), /原文对应/);

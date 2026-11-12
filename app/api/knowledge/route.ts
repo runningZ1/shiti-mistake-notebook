@@ -18,7 +18,7 @@ export async function GET() {
   const auth = await authenticate();
   if ("response" in auth) return auth.response;
   try {
-    const { rows } = await query<Row>("SELECT subject, knowledge_point, unit_name, guide FROM knowledge_units WHERE user_id = $1", [auth.user.userId]);
+    const { rows } = await query<Row>("SELECT subject, knowledge_point, unit_name, guide FROM knowledge_units WHERE user_id = $1 AND profile_id = $2", [auth.user.userId, auth.profileId]);
     return Response.json({ profiles: rows.map(profile) }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     console.error("Knowledge profiles load failed", error);
@@ -39,8 +39,8 @@ export async function PUT(request: Request) {
   }
   try {
     const updatedAt = new Date().toISOString();
-    const { rows } = await query<Row>("INSERT INTO knowledge_units (user_id, subject, knowledge_point, unit_name, updated_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT(user_id, subject, knowledge_point) DO UPDATE SET unit_name = excluded.unit_name, guide = CASE WHEN knowledge_units.unit_name = excluded.unit_name THEN knowledge_units.guide ELSE NULL END, updated_at = excluded.updated_at RETURNING subject, knowledge_point, unit_name, guide",
-      [auth.user.userId, subject, point, unit, updatedAt]);
+    const { rows } = await query<Row>("INSERT INTO knowledge_units (user_id, subject, knowledge_point, unit_name, updated_at, profile_id) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT(user_id, profile_id, subject, knowledge_point) DO UPDATE SET unit_name = excluded.unit_name, guide = CASE WHEN knowledge_units.unit_name = excluded.unit_name THEN knowledge_units.guide ELSE NULL END, updated_at = excluded.updated_at RETURNING subject, knowledge_point, unit_name, guide",
+      [auth.user.userId, subject, point, unit, updatedAt, auth.profileId]);
     return Response.json({ profile: profile(rows[0]) }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     console.error("Knowledge unit save failed", error);

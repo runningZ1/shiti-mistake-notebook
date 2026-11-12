@@ -1,4 +1,6 @@
+import { imageStorage, storageConfigured } from "@/lib/storage";
 import { env } from "cloudflare:workers";
+import { requireProfile } from "@/lib/profiles";
 import { query } from "@/db/client";
 import type { WorksheetMistake } from "./mistake-docx";
 
@@ -6,8 +8,8 @@ export function isVisualQuestion(question: string): boolean {
   return /(?:如|见|下|右|左).{0,4}[图表]|图(?:形|像|象|表|示)|统计图|坐标系|作图/.test(question);
 }
 
-export function needsOriginalPicture(subject: string, question: string): boolean {
-  return subject.includes("数学") || isVisualQuestion(question) || /计算|求值|化简|解方程/.test(question);
+export function needsOriginalPicture(subject: string, question: string, archiveKind?: string, judgementSource?: string): boolean {
+  return archiveKind === "collection" || judgementSource === "manual" || subject.includes("数学") || isVisualQuestion(question) || /计算|求值|化简|解方程/.test(question);
 }
 
 function imageDimensions(bytes: Uint8Array, mime: "image/jpeg" | "image/png"): { width: number; height: number } {
@@ -35,15 +37,16 @@ function imageDimensions(bytes: Uint8Array, mime: "image/jpeg" | "image/png"): {
 
 /** Existing uploads retain whole-page images; include them rather than silently losing diagrams. */
 export async function loadWordSourceImage(userId: string, uploadId: string, pageNumber: number): Promise<NonNullable<WorksheetMistake["sourceImage"]>> {
-  if (!env.BUCKET) throw new Error("原图存储暂不可用");
+  if (!storageConfigured() && !env.BUCKET) throw new Error("原图存储暂不可用");
+  const { id: profileId } = await requireProfile(userId);
   const { rows } = await query<{ file_keys: string[] }>(
-    "SELECT file_keys FROM uploads WHERE id = $1 AND user_id = $2", [uploadId, userId]);
+    "SELECT file_keys FROM uploads WHERE id = $1 AND user_id = $2 AND profile_id = $3", [uploadId, userId, profileId]);
   const upload = rows[0];
   if (!upload) throw new Error("原题图片已不存在，无法导出完整试卷");
   const keys = upload.file_keys;
   const key = Array.isArray(keys) ? keys[pageNumber - 1] : undefined;
   if (typeof key !== "string" || !key.startsWith(`${userId}/${uploadId}/`)) throw new Error("原题图片已不存在，无法导出完整试卷");
-  const source = await env.BUCKET.get(key);
+  const source = await imageStorage.get(key);
   if (!source) throw new Error("原题图片已不存在，无法导出完整试卷");
   const mime = source.httpMetadata?.contentType;
   if (mime !== "image/jpeg" && mime !== "image/png") throw new Error("原题图片为 WEBP，请使用页面上的生成 Word 按钮转换后下载");

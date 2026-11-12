@@ -1,3 +1,4 @@
+import { imageStorage, storageConfigured } from "@/lib/storage";
 import { env } from "cloudflare:workers";
 import { query, transaction } from "@/db/client";
 
@@ -164,13 +165,15 @@ export async function listAdminUploads(params: {
 }
 export async function deleteAdminUpload(id: string): Promise<string[] | null> {
   return transaction(async client => {
-    const { rows } = await client.query<{ file_keys: string }>("SELECT file_keys::text FROM uploads WHERE id = $1 FOR UPDATE", [id]);
+    const { rows } = await client.query<{ file_keys: string;user_id:string }>("SELECT file_keys::text,user_id FROM uploads WHERE id = $1 FOR UPDATE", [id]);
     if (!rows[0]) return null;
-    const keys = [...new Set(stringArray(rows[0].file_keys))];
+    const tracked=await client.query<{key:string;multipart_id:string}>("SELECT key,multipart_id FROM upload_objects WHERE user_id=$1 AND starts_with(key,$1 || '/' || $2 || '/')",[rows[0].user_id,id]);
+    const keys = [...new Set([...stringArray(rows[0].file_keys),...tracked.rows.map(o=>o.key)])];
     if (keys.some(key => !key)) throw new Error("上传文件索引损坏，请先修复后再删除");
     if (keys.length) {
-      if (!env.BUCKET) throw new Error("R2 未绑定，已保留批次以便重试");
-      for (let offset = 0; offset < keys.length; offset += 1000) await env.BUCKET.delete(keys.slice(offset, offset + 1000));
+      if (!storageConfigured() && !env.BUCKET) throw new Error("R2 未绑定，已保留批次以便重试");
+      for(const object of tracked.rows)await imageStorage.resumeMultipartUpload(object.key,object.multipart_id).abort();
+      for (let offset = 0; offset < keys.length; offset += 1000) await imageStorage.delete(keys.slice(offset, offset + 1000));
     }
     await client.query("DELETE FROM mistakes WHERE upload_id = $1", [id]);
     await client.query("DELETE FROM uploads WHERE id = $1", [id]);
@@ -193,8 +196,8 @@ export async function getAdminSystemStatus(): Promise<AdminSystemStatus> {
   return {
     dbStatus: "ok", dbLatencyMs: Date.now() - startTime,
     tableStats: { users: Number(rows[0].users), uploads: Number(rows[0].uploads), mistakes: Number(rows[0].mistakes) },
-    r2Configured: Boolean(env.BUCKET), aiConfigured: Boolean(key && !["placeholder_key", "local-e2e-dummy-key"].includes(key)),
-    aiModel: "deepseek-flash (多模态视觉识别与解析)",
+    r2Configured: storageConfigured(), aiConfigured: Boolean(key && !["placeholder_key", "local-e2e-dummy-key"].includes(key)),
+    aiModel: "deepseek-flash（文字解题与分析）；识别：百度 paper_cut_edu",
     security: { sessionSecretConfigured: Boolean(env.SESSION_SECRET && env.SESSION_SECRET.length >= 32), trustOaiHeadersDisabled: env.TRUST_OAI_HEADERS !== "1" },
     timestamp: new Date().toISOString(),
   };

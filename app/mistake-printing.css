@@ -60,3 +60,18 @@
   .daily-filter input, .daily-filter select { width: 100%; min-width: 0; }
   .date-heading button { margin-left: 0; }
 }
+
+.printing-options input[type="number"] { min-height: 40px; width: 100%; border: 1px solid #d8dce8; border-radius: 8px; padding: 8px 10px; font: inherit; }
+.printing-options label > span { color: #64748b; font-size: 12px; }
+.printing-draft { border: 1px solid #dcd8ef; border-radius: 9px; padding: 12px; margin-bottom: 16px; }
+.printing-draft p { margin: 0 0 8px; font-size: 13px; }
+.printing-draft button { margin: 3px; padding: 7px 10px; border: 1px solid #dcd8ef; border-radius: 7px; background: white; color: #5b46b2; cursor: pointer; }
+.printing-preview { margin: 16px 0; padding: 12px; border: 1px solid #e2e5ed; border-radius: 9px; }
+.printing-preview summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.printing-preview p { font-size: 12px; line-height: 1.8; }
+.printing-pages { display: flex; gap: 14px; overflow-x: auto; padding: 8px 2px 14px; background: #eef0f5; }
+.printing-page { position: relative; flex-shrink: 0; box-sizing: border-box; margin: 0; background: white; border: 1px solid #d8dce8; box-shadow: 0 2px 5px #0001; }
+.printing-page figcaption { font-size: 11px; line-height: 1.4; margin-bottom: 8px; min-height: 24px; }
+.printing-image-window { position: relative; overflow: hidden; outline: 1px dashed #bbb; }
+.printing-image-window img { position: absolute; max-width: none; object-fit: fill; }
+.printing-page-bottom { position: absolute; bottom: 8px; left: 0; right: 0; text-align: center; font-size: 10px; color: #64748b; }

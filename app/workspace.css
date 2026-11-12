@@ -128,3 +128,36 @@
   .app-shell .trial-banner { flex-wrap: wrap; padding: 12px; font-size: 11px; gap: 8px; }.app-shell .trial-banner>span { flex: 1; min-width: 170px; }.app-shell .trial-upgrade-btn { margin-left: 26px; }
 }
 @media(prefers-reduced-motion:reduce) { .app-shell *, .lightbox-backdrop * { scroll-behavior: auto; animation-duration: .01ms; animation-iteration-count: 1; transition: none; } }
+
+/* Durable analysis history and inspectable OCR source material. */
+.upload-history .section-heading p { max-width: 650px; color: #697386; font-size: 13px; line-height: 1.7; }
+.upload-history-item > span:nth-child(2) { flex: 1; min-width: 0; white-space: normal; }
+.upload-history-item strong { display: block; overflow-wrap: anywhere; }
+.upload-history-item small { display: block; margin-top: 5px; white-space: normal; line-height: 1.6; }
+.upload-record { margin: 24px 0; padding: 24px; background: #fff; border: 1px solid #e7e9ef; border-radius: 20px; }
+.upload-record h2 { font-size: 18px; margin: 20px 0 12px; }
+.record-photos { display: flex; gap: 16px; flex-wrap: wrap; }
+.record-photos button { width: 160px; border: 1px solid #e7e9ef; background: #f8f9fd; padding: 10px; border-radius: 12px; cursor: pointer; }
+.record-photos img { width: 100%; height: 180px; object-fit: contain; }
+.record-photos span { display: block; font-size: 12px; overflow-wrap: anywhere; }
+.record-question { border-top: 1px solid #e7e9ef; margin-top: 18px; padding-top: 16px; }
+.record-question h3 { font-size: 15px; }
+.record-question > div { white-space: pre-wrap; margin: 14px 0; overflow-wrap: anywhere; }
+.record-question b { display: block; color: #697386; font-size: 12px; margin-bottom: 7px; }
+@media(max-width:640px) { .upload-history-item { flex-wrap: wrap; gap: 10px; } .upload-history-item > span:nth-child(2) { flex-basis: 70%; } .upload-record { padding: 16px; } }
+.upload-metadata,.question-fields{display:grid;gap:12px;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:12px 0;min-width:0}
+.upload-metadata{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.question-fields label,.upload-metadata label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:#475569}
+.question-fields input,.question-fields select,.question-fields textarea,.upload-metadata input,.upload-metadata select{border:1px solid #cbd5e1;border-radius:7px;padding:9px;font:inherit;max-width:100%;background:white;color:#1e293b}
+.question-fields label:has(input[type=checkbox]){flex-direction:row;align-items:center}
+.question-editor .daily-actions{flex-wrap:wrap}.question-editor button,.upload-metadata button,.question-fields button{padding:8px 12px;border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc;color:#334155}
+.question-crop{position:relative;touch-action:none;cursor:crosshair;max-width:620px;margin:12px 0;user-select:none}
+.question-crop>img{display:block;width:100%;height:auto;pointer-events:none}
+.question-crop-box{position:absolute;border:2px solid #7c3aed;background:#7c3aed22;pointer-events:none}
+.question-bounds{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.question-crop-preview svg{display:block;width:100%;max-width:600px;max-height:600px;border:1px solid #e2e8f0;background:white}
+.ocr-original{max-height:240px;overflow:auto;white-space:pre-wrap;font-size:11px;word-break:break-all}
+.upload-history-selection{display:flex;align-items:center;gap:10px}.upload-history-selection>button{flex:1;min-width:0}
+.today-tasks{display:flex;flex-wrap:wrap;gap:14px;align-items:center}.today-tasks h2{font-size:17px}.today-tasks button{border:1px solid #ddd6fe;padding:8px;border-radius:8px;background:#faf5ff}
+@media(max-width:640px){.question-bounds{grid-template-columns:repeat(2,minmax(0,1fr))}.top-right{flex-wrap:wrap}.profile-switcher{max-width:170px}}
+.profile-switcher{display:flex;align-items:center;gap:6px;font-size:12px;position:relative}.profile-switcher>label{display:flex;align-items:center;gap:5px}.profile-switcher select,.profile-switcher input,.profile-switcher button{border:1px solid #e2e8f0;border-radius:6px;background:white;padding:6px;color:#475569;font-size:12px}.profile-switcher select{max-width:160px}.profile-switcher form{position:absolute;right:0;top:100%;background:white;box-shadow:0 8px 24px #0f172a22;z-index:30;padding:16px;border:1px solid #e2e8f0;border-radius:9px;display:grid;gap:8px;min-width:230px}.profile-switcher>small{display:none}

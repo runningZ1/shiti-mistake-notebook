@@ -1,3 +1,4 @@
+import { imageStorage, storageConfigured } from "@/lib/storage";
 import { env } from "cloudflare:workers";
 import { query, transaction } from "@/db/client";
 import { trialEndFrom } from "@/lib/trial";
@@ -168,8 +169,8 @@ export async function listUploadFileKeys(userId: string): Promise<string[]> {
 export async function abortUserImageUploads(userId: string): Promise<void> {
   const { rows } = await query<{ key: string; multipart_id: string }>("SELECT key, multipart_id FROM upload_objects WHERE user_id = $1", [userId]);
   if (rows.length === 0) return;
-  if (!env.BUCKET) throw new Error("图片存储未绑定，无法终止上传");
-  for (const object of rows) await env.BUCKET.resumeMultipartUpload(object.key, object.multipart_id).abort();
+  if (!storageConfigured() && !env.BUCKET) throw new Error("图片存储未绑定，无法终止上传");
+  for (const object of rows) await imageStorage.resumeMultipartUpload(object.key, object.multipart_id).abort();
 }
 export async function deleteUserRows(userId: string): Promise<boolean> {
   return transaction(async client => {

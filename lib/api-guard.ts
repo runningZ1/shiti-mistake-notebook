@@ -1,4 +1,6 @@
 import { getChatGPTUser, type ChatGPTUser } from "@/app/chatgpt-auth";
+import { requireProfile, ProfileAccessError } from "@/lib/profiles";
+import {headers} from 'next/headers';
 import { isAccessExpired } from "@/lib/trial";
 
 /**
@@ -24,7 +26,7 @@ function fail(error: string, status: number): Response {
   return Response.json({ error }, { status, headers: { "Cache-Control": "no-store" } });
 }
 
-export type AuthResult = { user: ChatGPTUser } | { response: Response };
+export type AuthResult = { user: ChatGPTUser & { profileId: string }; profileId: string } | { response: Response };
 
 export async function authenticate(): Promise<AuthResult> {
   let user: ChatGPTUser | null;
@@ -35,7 +37,15 @@ export async function authenticate(): Promise<AuthResult> {
   }
 
   if (!user) return { response: fail("请先登录", 401) };
-  return { user };
+  try {
+    const { id: profileId } = await requireProfile(user.userId);
+    const expected=(await headers()).get('X-Shiti-Profile');
+    if(expected&&expected!==profileId)return {response:fail('学习档案已切换，请重新加载后继续；当前编辑请先保留',409)};
+    return { user: { ...user, profileId }, profileId };
+  } catch (error) {
+    if (error instanceof ProfileAccessError) return { response: fail(error.message, 403) };
+    return { response: fail("学习档案服务暂不可用", 503) };
+  }
 }
 
 export async function authenticateAdmin(): Promise<AuthResult> {

@@ -7,12 +7,18 @@ import { isTrialExpired, accessEndsAt } from "@/lib/trial";
 import type { PracticeSummary } from "@/lib/practice-types";
 import { beijingDate, isCalendarDate } from "@/lib/mistake-dates";
 import { pastePrintOptions, worksheetPrintOptions, printOptionsParams, type MistakePrintOptions } from "@/lib/mistake-print-options";
-import { ReflectionEditor, PrintSettings, type ReflectionActions, type ReflectionDraft } from "./mistake-printing";
+import { ReflectionEditor, PrintSettings, usePrintWorkspaceDraft, type ReflectionActions, type ReflectionDraft } from "./mistake-printing";
 import KnowledgeMap from "./knowledge-map";
 import UnitPractice from "./unit-practice";
 import EssayAnalysis from "./essay-analysis";
 import MathText from "./math-text";
-import { ArrowRight, BookOpen, CalendarDays, Camera, Check, CheckCircle2, ChevronDown, Clock3, CloudUpload, Crown, FileImage, Filter, Lightbulb, LoaderCircle, LogOut, Menu, Plus, FileDown, Search, Sparkles, Trash2, UploadCloud, X, Network, ClipboardList, PenLine } from "lucide-react";
+import UploadHistory from "./upload-history";
+import UploadRecord from "./upload-record";
+import ProfileSwitcher from "./profile-switcher";
+import TodayTasks from "./today-tasks";
+import {subjectNames} from "@/lib/question-types";
+import type { UploadDetail } from "@/lib/upload-types";
+import { ArrowRight, BookOpen, CalendarDays, Camera, CheckCircle2, ChevronDown, Clock3, CloudUpload, Crown, FileImage, Filter, Lightbulb, LoaderCircle, LogOut, Menu, Plus, FileDown, Search, Sparkles, Trash2, UploadCloud, X, Network, ClipboardList, PenLine } from "lucide-react";
 import "./workspace.css";
 
 type Similar = { question: string; answer: string; explanation: string };
@@ -22,15 +28,16 @@ type Mistake = {
   sourceName: string; similarQuestions: Similar[]; createdAt: string;
   questionBounds?: number[];
   reflection?: string;
+  archiveKind?: "mistake" | "collection"; judgementSource?: string;
 };
 type GradedQuestion = { pageNumber: number; questionLabel: string; verdict: "correct" | "incorrect" | "uncertain"; comment: string };
-type Analysis = { subject: string; summary: string; uncertainNote: string; gradingMode: "marked" | "unmarked" | "mixed"; grading: GradedQuestion[]; mistakes: Mistake[] };
-type SelectedFile = { file: File; preview: string };
-type Tab = "home" | "notebook" | "results" | "knowledge" | "practice" | "essay";
+type Analysis = { uploadId?: string; subject: string; summary: string; uncertainNote: string; gradingMode: "marked" | "unmarked" | "mixed"; grading: GradedQuestion[]; mistakes: Mistake[] };
+type SelectedFile = { file: File; preview: string; rotation: number };
+type Tab = "home" | "notebook" | "results" | "knowledge" | "practice" | "essay" | "history";
 
 const analysisTips = [
   "若有答题卷，请和试卷题目一起上传，方便核对每道题。",
-  "一次最多上传 4 张 JPG、PNG 或 WEBP 图片。",
+  "一次最多上传 4 张 JPG、PNG 图片。",
   "拍照时让题目与作答都清晰入镜，尽量避开反光。",
   "请先遮盖姓名、学号等个人信息，再上传图片。",
   "认真对待每一道错题，你正在一点点进步。",
@@ -73,8 +80,18 @@ async function shrinkImage(file: File): Promise<File> {
   } finally { URL.revokeObjectURL(objectUrl); }
 }
 
+async function prepareUploadPhoto(item:SelectedFile):Promise<File>{
+ if(!item.rotation)return shrinkImage(item.file);
+ const url=URL.createObjectURL(item.file);
+ try{const img=await new Promise<HTMLImageElement>((resolve,reject)=>{const i=new Image();i.onload=()=>resolve(i);i.onerror=reject;i.src=url;});
+ const c=document.createElement('canvas');const quarter=item.rotation===90||item.rotation===270;c.width=quarter?img.naturalHeight:img.naturalWidth;c.height=quarter?img.naturalWidth:img.naturalHeight;
+ const ctx=c.getContext('2d');if(!ctx)throw new Error('图片旋转失败');ctx.translate(c.width/2,c.height/2);ctx.rotate(item.rotation*Math.PI/180);ctx.drawImage(img,-img.naturalWidth/2,-img.naturalHeight/2);
+ const b=await new Promise<Blob|null>(r=>c.toBlob(r,'image/jpeg',0.95));if(!b)throw new Error('图片转换失败');return shrinkImage(new File([b],item.file.name.replace(/\.[^.]+$/,'')+'.jpg',{type:'image/jpeg'}));
+ }finally{URL.revokeObjectURL(url);}
+}
+
 function needsOriginalPicture(item: Mistake): boolean {
-  return item.subject.includes("数学") || /(?:如|见|下|右|左).{0,4}[图表]|图(?:形|像|象|表|示)|统计图|坐标系|计算|求值|化简|解方程|作图/.test(item.question);
+  return item.archiveKind === "collection" || item.judgementSource === "manual" || item.subject.includes("数学") || /(?:如|见|下|右|左).{0,4}[图表]|图(?:形|像|象|表|示)|统计图|坐标系|计算|求值|化简|解方程|作图/.test(item.question);
 }
 
 async function sourcePicture(item: Mistake): Promise<{ bytes: Uint8Array; width: number; height: number; fullPage: boolean }> {
@@ -97,7 +114,7 @@ async function sourcePicture(item: Mistake): Promise<{ bytes: Uint8Array; width:
     const sy = Math.floor(image.naturalHeight * top / 1000);
     const sw = Math.max(1, Math.ceil(image.naturalWidth * (right - left) / 1000));
     const sh = Math.max(1, Math.ceil(image.naturalHeight * (bottom - top) / 1000));
-    const scale = Math.min(1, 1600 / Math.max(sw, sh));
+    const scale = Math.min(1, 8192 / Math.max(sw, sh));
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(sw * scale));
     canvas.height = Math.max(1, Math.round(sh * scale));
@@ -106,7 +123,7 @@ async function sourcePicture(item: Mistake): Promise<{ bytes: Uint8Array; width:
     context.fillStyle = "#fff";
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/jpeg", 0.86));
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/jpeg", 0.95));
     if (!blob) throw new Error("原题图片转换失败");
     return { bytes: new Uint8Array(await blob.arrayBuffer()), width: canvas.width, height: canvas.height, fullPage: !valid };
   } finally {
@@ -180,7 +197,7 @@ function MistakeCard({ item, onSimilar, onExport, onDelete, onSelect, selectedFo
     <label className="mistake-select"><input type="checkbox" checked={selectedForBatch} onChange={() => onSelect(item.id)} disabled={batchBusy} />{selectedForBatch ? "已加入批量操作" : "选中这道错题"}</label>
     <div className="question-top">
       <div className="question-tags">
-        <SubjectPill subject={item.subject} />
+        <SubjectPill subject={item.subject} />{item.archiveKind&&<span className="subject-pill sand">{item.archiveKind==="collection"?"复习收藏":item.judgementSource==="manual"?"人工确认错题":"分析归档"}</span>}
         <span className="knowledge-tag">{item.knowledgePoint || "知识点待确认"}</span>
         {item.similarQuestions.length > 0 ? (
           <span className="mistake-status-pill mastered"><CheckCircle2 size={12} />练习已生成</span>
@@ -224,8 +241,24 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
   const [tab, setActiveTab] = useState<Tab>("home");
   const [mistakes, setMistakes] = useState<Mistake[]>([]);
   const [papers, setPapers] = useState<PracticeSummary[]>([]);
+  const [profileId,setProfileId]=useState("");
+  useEffect(()=>{const changed=(e:StorageEvent)=>{if(e.key==='shiti-profile-changed')window.location.reload();};window.addEventListener('storage',changed);return()=>window.removeEventListener('storage',changed);},[]);
+  const [activeUploadId, setActiveUploadId] = useState("");
+  const [record, setRecord] = useState<UploadDetail | null>(null);
+  const [recordLoading, setRecordLoading] = useState(false);
+  const [recordError, setRecordError] = useState("");
+  const [recordAttempt, setRecordAttempt] = useState(0);
+  const loadedRecordId=useRef("");
+  const [historyVersion, setHistoryVersion] = useState(0);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [selected, setSelected] = useState<SelectedFile[]>([]);
+  const [uploadIntent,setUploadIntent]=useState('marked');
+  const [uploadTitle,setUploadTitle]=useState('');
+  const [uploadSubject,setUploadSubject]=useState('数学');
+  const [uploadGrade,setUploadGrade]=useState('');
+  const [uploadDate,setUploadDate]=useState(()=>beijingDate(new Date().toISOString()));
+  const uploadRequestKey=useRef('');
+  const [removedId,setRemovedId]=useState('');
   const [selectedMistakeIds, setSelectedMistakeIds] = useState<string[]>([]);
   const [batchCount, setBatchCount] = useState("2");
   const [batchBusy, setBatchBusy] = useState(false);
@@ -237,6 +270,8 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
   const [trialExpired, setTrialExpired] = useState(() => role !== "admin" && isTrialExpired(trialEndsAt));
   // 初值就是 true：挂载后必定拉一次错题本，等请求落地再置回 false
   const [loadingList, setLoadingList] = useState(true);
+  const [ocrReady, setOcrReady] = useState<boolean | null>(null);
+  const [storageReady, setStorageReady] = useState<boolean | null>(null);
   const [aiReady, setAiReady] = useState<boolean | null>(null);
   const [busySimilar, setBusySimilar] = useState<string | null>(null);
   const [exportingWord, setExportingWord] = useState(false);
@@ -254,6 +289,7 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
   const [listError, setListError] = useState("");
   const [drafts, setDrafts] = useState<Record<string, ReflectionDraft>>({});
   const [printIds, setPrintIds] = useState<string[] | null>(null);
+  const [printOpen,setPrintOpen]=useState(false);
   const [printOptions, setPrintOptions] = useState<MistakePrintOptions>({ ...pastePrintOptions });
   const [printError, setPrintError] = useState("");
   const [printProgress, setPrintProgress] = useState("");
@@ -282,8 +318,12 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
     setMobileMenu(false);
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
-      if (next === "home" || next === "results") url.searchParams.delete("view");
+      if (next === "home") url.searchParams.delete("view");
       else url.searchParams.set("view", next);
+      if (next !== "practice") url.searchParams.delete("paper");
+      if (next !== "essay") url.searchParams.delete("essay");
+      if (next === "results" && activeUploadId) url.searchParams.set("upload", activeUploadId);
+      else url.searchParams.delete("upload");
       if (url.href !== window.location.href) window.history.pushState(null, "", url);
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -293,7 +333,8 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
     const restore = () => {
       const params = new URLSearchParams(window.location.search);
       const view = params.get("view");
-      setActiveTab(view === "notebook" || view === "knowledge" || view === "practice" || view === "essay" ? view : "home");
+      setActiveTab(view === "notebook" || view === "knowledge" || view === "practice" || view === "essay" || view === "history" || view === "results" ? view : "home");
+      setActiveUploadId(view === "results" ? params.get("upload") || "" : "");
       setQuery(params.get("q") || "");
       setSubject(params.get("subject") || "全部科目");
       const date = params.get("date") || "";
@@ -322,10 +363,61 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
   }, [query, subject, month, dates]);
 
   useEffect(() => {
-    fetch("/api/status").then(r => r.json() as Promise<{ aiConfigured: boolean }>).then(data => setAiReady(Boolean(data.aiConfigured))).catch(() => setAiReady(false));
+    fetch("/api/status").then(r => r.json() as Promise<{ aiConfigured: boolean; ocrConfigured: boolean; storageConfigured: boolean }>).then(data => { setAiReady(Boolean(data.aiConfigured)); setOcrReady(Boolean(data.ocrConfigured)); setStorageReady(Boolean(data.storageConfigured)); }).catch(() => { setAiReady(false); setOcrReady(false); setStorageReady(false); });
     void loadMistakes();
+    fetch("/api/profiles",{cache:"no-store"}).then(r=>r.json() as Promise<{currentProfileId:string}>).then(d=>setProfileId(d.currentProfileId)).catch(()=>{});
     fetch("/api/practice-papers").then(r => { if (redirectIfUnauthorized(r)) return null; if (!r.ok) throw new Error("练习卷列表加载失败"); return r.json() as Promise<{ papers?: PracticeSummary[] }>; }).then(data => { if (data && Array.isArray(data.papers)) setPapers(data.papers); }).catch(() => setError("练习卷列表加载失败，请刷新页面重试"));
   }, []);
+
+  useEffect(() => {
+    if (!activeUploadId) { loadedRecordId.current="";setRecord(null); setAnalysis(null); return; }
+    const controller = new AbortController();
+    if(loadedRecordId.current!==activeUploadId){setRecordLoading(true);setRecord(null);setAnalysis(null);loadedRecordId.current=activeUploadId;}setRecordError("");
+    let timer: ReturnType<typeof setTimeout>;
+    fetch(`/api/uploads/${encodeURIComponent(activeUploadId)}`, {cache:"no-store",signal:controller.signal}).then(async response => {
+      if (redirectIfUnauthorized(response)) return;
+      const data = await response.json() as {upload?:UploadDetail;error?:string};
+      if (!response.ok || !data.upload) throw new Error(data.error || "分析记录读取失败");
+      const detail = data.upload;
+      setRecord(detail);
+      setAnalysis({uploadId:detail.id,subject:detail.subject,summary:detail.analysis?.summary || (detail.status==="processing"?"作业正在分析，可稍后从历史记录继续查看。":detail.status==="failed"?"处理尚未完成，原始资料已保留。":detail.questions.length?"识别内容已保存，请逐题核对确认。":"历史上传已找回，完整判题结果未保存。"),uncertainNote:detail.analysis?.uncertainNote || "",gradingMode:detail.analysis?.gradingMode || "unmarked",grading:detail.analysis?.grading || [],mistakes:detail.mistakes});
+      if(detail.status==="processing"&&!detail.canRetry) timer=setTimeout(()=>setRecordAttempt(v=>v+1),5000);
+    }).catch(cause=>{if(!controller.signal.aborted)setRecordError(cause instanceof Error?cause.message:"分析记录读取失败");}).finally(()=>{if(!controller.signal.aborted)setRecordLoading(false);});
+    return ()=>{controller.abort();clearTimeout(timer);};
+  },[activeUploadId,recordAttempt]);
+
+  function openUpload(id:string) {
+    if(!discardBeforeLeaving())return;
+    setActiveUploadId(id);setActiveTab("results");setMobileMenu(false);
+    const url=new URL(window.location.href);url.searchParams.set("view","results");url.searchParams.set("upload",id);window.history.pushState(null,"",url);window.scrollTo({top:0});
+    setRecordAttempt(v=>v+1);
+  }
+
+  async function refreshCurrentUpload(){
+    const r=await fetch(`/api/uploads/${encodeURIComponent(activeUploadId)}`,{cache:'no-store'});if(!r.ok)return;const d=await r.json() as {upload:UploadDetail};setRecord(d.upload);setAnalysis(a=>a?{...a,subject:d.upload.subject,mistakes:d.upload.mistakes}:a);void loadMistakes();setHistoryVersion(v=>v+1);
+  }
+  function movePhoto(index:number,offset:number){uploadRequestKey.current='';setSelected(v=>{const n=[...v];[n[index],n[index+offset]]=[n[index+offset],n[index]];return n;});}
+  async function undoRemove(){const r=await fetch(`/api/mistakes/${encodeURIComponent(removedId)}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:"restore"})});if(!r.ok){setError('撤销失败，请重试');return;}setRemovedId('');void loadMistakes();}
+  async function retrySelectedOriginal(){
+   if(selectedMistakeIds.length!==1){setError('请勾选一道题，再开始原题重做。');return;}
+   const r=await fetch('/api/learning/retries',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mistakeId:selectedMistakeIds[0],mode:'original'})});const d=await r.json() as {paper?:PracticeSummary;paperId?:string;error?:string};if(!r.ok||!d.paperId){setError(d.error||'创建练习失败');return;}if(d.paper)savePaperSummary(d.paper);setActiveTab('practice');const url=new URL(window.location.href);url.searchParams.set('view','practice');url.searchParams.set('paper',d.paperId);window.history.pushState(null,'',url);window.dispatchEvent(new PopStateEvent('popstate'));
+  }
+  function collectUploads(ids:string[]){const set=new Set(ids);const items=mistakes.filter(m=>set.has(m.uploadId));if(!items.length){setError('这些作业还没有已确认归档的题目，请先逐题归档。');return;}openPrintSettings(items);}
+
+  async function retryUpload(kind: "recognize" | "analyze" = "analyze") {
+    if(!activeUploadId||uploading)return;
+    setUploading(true);setError("");
+    try {
+      const response=await fetch(`/api/uploads/${encodeURIComponent(activeUploadId)}/analyze`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind})});
+      if(redirectIfUnauthorized(response))return;
+      const data=await response.json() as {error?:string;code?:string};
+      if(data.code==="TRIAL_EXPIRED")setTrialExpired(true);
+      if(!response.ok)throw new Error(data.error||"分析未完成，请重试");
+      void fetch(`/api/uploads/${encodeURIComponent(activeUploadId)}/run`,{method:"POST"}).finally(()=>setRecordAttempt(v=>v+1));
+      await loadMistakes();
+    }catch(cause){setError(cause instanceof Error?cause.message:"分析未完成");}
+    finally{setUploading(false);setRecordAttempt(v=>v+1);setHistoryVersion(v=>v+1);}
+  }
 
   useEffect(() => {
     const current = new Set(selected.map(item => item.preview));
@@ -376,8 +468,10 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
     return Object.entries(result);
   }, [filtered]);
   const resultMistakes = analysis?.mistakes.map(item => mistakes.find(saved => saved.id === item.id) || item) || [];
-  const printItems = (printIds || []).map(id => mistakes.find(item => item.id === id)).filter((item): item is Mistake => Boolean(item));
+  const printItems: Mistake[] = (printIds || []).map(id => mistakes.find(item => item.id === id)||{id,uploadId:'',subject:'不可访问',question:'该题已移出或不可访问，请从清单移除后继续',incorrectAnswer:'',correctAnswer:'',reasoning:'',knowledgePoint:'',pageNumber:1,sourceName:'',createdAt:'',similarQuestions:[]});
   const unsavedPrintItems = printItems.filter(item => drafts[item.id] && drafts[item.id].value !== (item.reflection || ""));
+  const printDraft=usePrintWorkspaceDraft({profileId:profileId||undefined,items:printItems,options:printOptions,onItems:ids=>{setPrintIds(ids);setPrintOpen(true);},onOptions:setPrintOptions,reflections:Object.fromEntries(Object.entries(drafts).map(([id,d])=>[id,d.value])),onReflections:values=>setDrafts(current=>({...current,...Object.fromEntries(Object.entries(values).map(([id,value])=>[id,{value,saving:false,error:''}]))}))});
+
 
   useEffect(() => {
     const key = JSON.stringify([query, subject, month, dates]);
@@ -424,6 +518,9 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
   }
 
   function discardBeforeLeaving() {
+    if(document.querySelector('[data-unsaved-question="true"]')&&!window.confirm("题目草稿尚未保存到服务器，离开可能丢失这部分输入。是否离开？"))return false;
+    const event = new Event("shiti-before-view-change", {cancelable:true});
+    if (!window.dispatchEvent(event)) return false;
     if (Object.values(drafts).some(draft => draft.saving)) return false;
     if (!Object.entries(drafts).some(([id, draft]) => draft.value !== (mistakes.find(item => item.id === id)?.reflection || ""))) return true;
     if (!window.confirm("还有未保存的错因。确定放弃更改并离开吗？")) return false;
@@ -467,7 +564,7 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
   function openPrintSettings(items: Mistake[], template: "worksheet" | "paste" = "paste") {
     if (!items.length || exportingWord) return;
     if (!printOptionsChosen.current) setPrintOptions({ ...(template === "paste" ? pastePrintOptions : worksheetPrintOptions) });
-    setPrintIds(items.map(item => item.id)); setPrintError(""); setPrintProgress(""); setExportFile(null);
+    setPrintOpen(true);setPrintIds(items.map(item => item.id)); setPrintError(""); setPrintProgress(""); setExportFile(null);
   }
 
   async function savePrintDrafts() {
@@ -511,12 +608,13 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
 
   function addFiles(list: FileList | null) {
     if (!list || uploading) return;
-    const incoming = Array.from(list).filter(file => ["image/jpeg", "image/png", "image/webp"].includes(file.type));
-    if (incoming.length !== list.length) setError("只支持 JPG、PNG、WEBP 图片"); else setError("");
+    const incoming = Array.from(list).filter(file => ["image/jpeg", "image/png"].includes(file.type));
+    if (incoming.length !== list.length) setError("只支持 JPG、PNG 图片"); else setError("");
     if (selected.length + incoming.length > 4) setError("一次最多上传 4 张图片");
     if (!incoming.length) return;
+    uploadRequestKey.current='';
     setSelected(current => {
-      const next = [...current, ...incoming.map(file => ({ file, preview: URL.createObjectURL(file) }))];
+      const next = [...current, ...incoming.map(file => ({ file, preview: URL.createObjectURL(file), rotation: 0 }))];
       if (next.length > 4) next.slice(4).forEach(item => URL.revokeObjectURL(item.preview));
       return next.slice(0, 4);
     });
@@ -527,17 +625,22 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
   async function analyze() {
     if (!selected.length) { fileRef.current?.click(); return; }
     if (trialExpired) { setError("7 天免费体验已结束，请前往会员方案（¥99/月）开通使用权限。"); return; }
-    if (aiReady === false) { setError("AI 服务尚未配置，当前不能自动分析。请完成服务端密钥配置。"); return; }
+    if (ocrReady !== true || storageReady !== true) { setError("照片识别或云存储服务尚未配置，请稍后重试。"); return; }
     setTipIndex(0); setUploading(true); setError("");
+    const requestProfile=profileId;if(!requestProfile){setUploading(false);setError("正在读取学习档案，请稍后上传");return;}
     try {
       const form = new FormData();
-      for (const item of selected) form.append("files", await shrinkImage(item.file));
-      const response = await fetch("/api/analyze", { method: "POST", body: form });
+      for (const item of selected) { form.append("files", await prepareUploadPhoto(item));form.append("originalFiles",item.file); }
+      form.set("rotations",JSON.stringify(selected.map(i=>i.rotation)));form.set("intent",uploadIntent);form.set("title",uploadTitle||selected.map(i=>i.file.name).join('、'));form.set("subject",uploadSubject);form.set("gradeLevel",uploadGrade);form.set("homeworkDate",uploadDate);
+      uploadRequestKey.current ||= crypto.randomUUID();
+      const response = await fetch("/api/analyze", { method: "POST", headers:{"Idempotency-Key":uploadRequestKey.current,"X-Shiti-Profile":requestProfile},body: form });
       if (redirectIfUnauthorized(response)) return;
-      const data = await response.json() as Analysis & { error?: string; code?: string };
+      const data = await response.json() as {uploadId?:string;duplicateOf?:string;error?:string;code?:string};
       if (data.code === "TRIAL_EXPIRED") setTrialExpired(true);
-      if (!response.ok) throw new Error(data.error || "分析失败，请重试");
-      setAnalysis(data); setMistakes(current => [...data.mistakes, ...current]); setSelected([]); setSelectedMistakeIds([]); setBatchNotice(""); setTab("results");
+      if (!response.ok) { setHistoryVersion(v=>v+1);throw new Error(data.error || "上传未完成，请用当前照片重试"); }
+      setSelected([]);uploadRequestKey.current='';setSelectedMistakeIds([]);setHistoryVersion(v=>v+1);
+      if(data.duplicateOf)setError('检测到此前上传过相同照片。本次独立保存，请核对是否需要重复整理。');
+      if(data.uploadId){openUpload(data.uploadId);void fetch(`/api/uploads/${encodeURIComponent(data.uploadId)}/run`,{method:'POST'}).finally(()=>setRecordAttempt(v=>v+1));}
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (cause) { setError(cause instanceof Error ? cause.message : "分析失败，请稍后重试"); }
     finally { setUploading(false); }
@@ -603,7 +706,7 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
       const response = await fetch(`/api/mistakes/${id}`, { method: "DELETE" });
       if (redirectIfUnauthorized(response)) return;
       if (!response.ok) throw new Error("移除失败，请重试");
-      setMistakes(current => current.filter(item => item.id !== id));
+      setRemovedId(id);setMistakes(current => current.filter(item => item.id !== id));
       setAnalysis(current => current ? { ...current, mistakes: current.mistakes.filter(item => item.id !== id) } : current);
       setSelectedMistakeIds(current => current.filter(item => item !== id));
     } catch (cause) { setError(cause instanceof Error ? cause.message : "移除失败"); }
@@ -621,7 +724,7 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
       if (!response.ok || !Array.isArray(data.mistakes)) throw new Error(data.error || "读取最新错题失败，请重试");
       const current = new Map(data.mistakes.map(item => [item.id, item]));
       const latest = items.map(item => current.get(item.id));
-      if (latest.some(item => !item)) { setMistakes(data.mistakes); setPrintIds(ids => ids?.filter(id => current.has(id)) ?? null); throw new Error("部分错题已不存在或无权访问，题目清单已更新，请核对后重试。"); }
+      if (latest.some(item => !item)) { setMistakes(data.mistakes); throw new Error("部分题目已移出或无权访问，原清单已保留，请移除标记不可访问的条目后重试。"); }
       const fresh = latest as Mistake[];
       setMistakes(data.mistakes);
       const needsCrop = options?.template === "paste" && fresh.some(item => needsOriginalPicture(item) && item.questionBounds?.length === 4);
@@ -698,9 +801,9 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  const recent = [...mistakes].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 2);
   const grading = analysis?.grading || [];
   const correctCount = grading.filter(item => item.verdict === "correct").length;
+  const incorrectCount = grading.filter(item => item.verdict === "incorrect").length;
   const uncertainCount = grading.filter(item => item.verdict === "uncertain").length;
   return <><div className="app-shell">
     <aside id="learning-navigation" className={`sidebar ${mobileMenu ? "open" : ""}`} aria-label="学习导航">
@@ -723,42 +826,7 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
         <span className="sidebar-section-label">我的学习</span>
       </div>
       <nav className="side-nav" aria-label="学习功能">
-        <button className={tab === "home" ? "active" : ""} onClick={() => { setTab("home"); setMobileMenu(false); }}>
-          <span className="nav-item-left">
-            <span className="nav-icon-box violet"><Sparkles size={16} /></span>
-            <span className="nav-label">学习工作台</span>
-          </span>
-          <ArrowRight size={14} className="nav-arrow" />
-        </button>
-        <button className={tab === "notebook" ? "active" : ""} onClick={() => { setTab("notebook"); setMobileMenu(false); }}>
-          <span className="nav-item-left">
-            <span className="nav-icon-box emerald"><BookOpen size={16} /></span>
-            <span className="nav-label">我的错题本</span>
-          </span>
-          <em className="nav-count-badge">{mistakes.length}</em>
-        </button>
-        <button className={tab === "essay" ? "active" : ""} onClick={() => { setTab("essay"); setMobileMenu(false); }}>
-          <span className="nav-item-left">
-            <span className="nav-icon-box rose"><PenLine size={16} /></span>
-            <span className="nav-label">英语作文批改</span>
-          </span>
-          <span className="nav-new-pill">AI批改</span>
-        </button>
-        <button className={tab === "knowledge" ? "active" : ""} onClick={() => { setTab("knowledge"); setMobileMenu(false); }}>
-          <span className="nav-item-left">
-            <span className="nav-icon-box sky"><Network size={16} /></span>
-            <span className="nav-label">知识图谱</span>
-          </span>
-          <ArrowRight size={14} className="nav-arrow" />
-        </button>
-        <button className={tab === "practice" ? "active" : ""} onClick={() => openPractice()}>
-          <span className="nav-item-left">
-            <span className="nav-icon-box amber"><ClipboardList size={16} /></span>
-            <span className="nav-label">单元练习卷</span>
-          </span>
-          <em className="nav-count-badge">{papers.length}</em>
-        </button>
-        {analysis && <button className={tab === "results" ? "active" : ""} onClick={() => setTab("results")}><span className="nav-item-left"><span className="nav-icon-box"><CheckCircle2 size={16} /></span><span>本次分析结果</span></span><ArrowRight size={14} /></button>}
+        {([{key:'home',label:'今日',Icon:Sparkles},{key:'history',label:'作业',Icon:Clock3},{key:'notebook',label:'错题本',Icon:BookOpen},{key:'practice',label:'练习与复习',Icon:ClipboardList},{key:'essay',label:'作文',Icon:PenLine}] as const).map(({key,label,Icon})=><button key={key} className={tab===key||key==='history'&&tab==='results'||key==='practice'&&tab==='knowledge'?'active':''} onClick={()=>key==='practice'?openPractice():setTab(key)}><span className="nav-item-left"><span className="nav-icon-box violet"><Icon size={16}/></span><span className="nav-label">{label}</span></span><ArrowRight size={14}/></button>)}
       </nav>
 
       <div className="sidebar-section-header">
@@ -821,8 +889,8 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
     <main className="main-area">
       <header className="topbar">
         <button className="mobile-menu" onClick={() => setMobileMenu(!mobileMenu)} aria-label={mobileMenu ? "关闭菜单" : "打开菜单"} aria-expanded={mobileMenu} aria-controls="learning-navigation"><Menu size={22} /></button>
-        <div className="breadcrumb">学习空间 <span>/</span> <strong>{tab === "home" ? "学习工作台" : tab === "results" ? "分析结果" : tab === "knowledge" ? "知识图谱" : tab === "practice" ? "单元练习卷" : tab === "essay" ? "英语作文分析" : "我的错题本"}</strong></div>
-        <div className="top-right">
+        <div className="breadcrumb">学习空间 <span>/</span> <strong>{tab === "home" ? "今日" : tab === "results" ? "作业详情" : tab === "knowledge" ? "知识点回顾" : tab === "practice" ? "练习与复习" : tab === "essay" ? "作文" : tab === "history" ? "作业" : "错题本"}</strong></div>
+        <div className="top-right"><ProfileSwitcher beforeSwitch={()=>discardBeforeLeaving()}/>
           <button
             type="button"
             className="topbar-quick-snap"
@@ -839,30 +907,34 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
 
       {/* 移动端/H5 专用自适应悬浮底部 TabBar */}
       <nav className="mobile-tabbar" aria-label="移动端主导航">
-        {([{ key: "home", label: "工作台", Icon: Sparkles }, { key: "notebook", label: "错题本", Icon: BookOpen }, { key: "knowledge", label: "知识图谱", Icon: Network }, { key: "practice", label: "练习卷", Icon: ClipboardList }, { key: "essay", label: "作文批改", Icon: PenLine }] as const).map(({ key, label, Icon }) => <button key={key} type="button" className={`tabbar-item ${tab === key ? "active" : ""}`} aria-current={tab === key ? "page" : undefined} onClick={() => key === "practice" ? openPractice() : setTab(key)}><Icon size={20} /><span>{label}</span></button>)}
+        {([{ key: "home", label: "今日", Icon: Sparkles }, { key: "history", label: "作业", Icon: Clock3 }, { key: "notebook", label: "错题本", Icon: BookOpen }, { key: "practice", label: "练习与复习", Icon: ClipboardList }, { key: "essay", label: "作文", Icon: PenLine }] as const).map(({ key, label, Icon }) => <button key={key} type="button" className={`tabbar-item ${tab === key || key==='history'&&tab==='results'||key==='practice'&&tab==='knowledge' ? "active" : ""}`} aria-current={tab === key ? "page" : undefined} onClick={() => key === "practice" ? openPractice() : setTab(key)}><Icon size={20} /><span>{label}</span></button>)}
       </nav>
       <div className="content-wrap">
         {trialEndsAt && role !== "admin" && <div className={`trial-banner ${trialExpired ? "expired" : ""}`} role="status"><Sparkles size={18} /><span suppressHydrationWarning>{trialExpired ? "体验或会员已到期。已有错题仍可查看；继续分析或生成练习可开通 VIP（¥99／30天）。" : `${paidEndsAt && !isTrialExpired(paidEndsAt) ? "会员有效期至：" : "免费体验截止时间："}${new Date(trialEndsAt).toLocaleString("zh-CN", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}。`}</span><a href="/pricing" className="trial-upgrade-btn">{trialExpired ? "立即开通 VIP" : "会员方案"}</a></div>}
         {error && <div className="error-banner" role="alert"><span>{error}</span><button onClick={() => setError("")} aria-label="关闭提示"><X size={17} /></button></div>}
+        {printDraft.pending&&<div className="notice-card" role="status">发现可恢复的打印清单。<button onClick={printDraft.restore}>恢复上次整理</button><button onClick={printDraft.keepCurrent}>保留当前选择</button></div>}
+        {removedId&&<div className="notice-card" role="status">已移出错题本，原始作业与错因仍保留。<button onClick={()=>void undoRemove()}>撤销移出</button></div>}
         {exportFile && <div className="notice-card" role="status"><span>Word 文档已生成，可在下载列表打开后编辑、打印。</span><a className="word-download-link" href={exportFile.url} download={exportFile.name}>再次下载 Word</a><button className="icon-action" onClick={() => setExportFile(null)} aria-label="关闭下载提示"><X size={17} /></button></div>}
         {tab === "home" && <>
+          <TodayTasks refreshKey={historyVersion} onOpen={openUpload} onPractice={()=>openPractice()}/>
           <section className="welcome-row"><div><div className="eyebrow"><span className="eyebrow-line" /> YOUR LEARNING DESK</div><h1>你好，{name}<span className="wave">✳</span></h1><p>把今天不懂的题，变成明天会做的题。</p></div><span className="welcome-date"><Clock3 size={16} />今天也在认真进步</span></section>
           <section className="desk-overview" aria-label="开始学习"><div><span className="section-kicker">从一道错题，开始一次进步</span><h2>拍下来，理清楚，再练一次。</h2><p>先上传作业，查看逐题解析；再到错题本整理和练习。</p></div><div className="desk-overview-steps"><span><Camera size={17} />上传作业</span><ArrowRight size={14} /><span><BookOpen size={17} />整理错题</span><ArrowRight size={14} /><span><ClipboardList size={17} />针对练习</span></div></section>
           <div className="dashboard-grid"><section className="panel upload-panel" ref={uploadPanelRef}>
             <div className="panel-heading"><div><span className="section-kicker">01 / UPLOAD</span><h2>上传你的题目</h2><p>试卷、练习册、课作本，拍一张就能开始整理。</p></div><span className="heading-icon"><CloudUpload size={24} /></span></div>
-            <button type="button" className="upload-zone" disabled={uploading} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); addFiles(event.dataTransfer.files); }} onClick={() => fileRef.current?.click()}><span className="upload-illustration"><UploadCloud size={31} /></span><strong>点击上传，或将图片拖到这里</strong><span>支持 JPG、PNG、WEBP · 最多 4 张</span><span className="upload-select">选择图片 <Plus size={16} /></span></button>
-            <div className="upload-actions"><button disabled={uploading} onClick={() => cameraRef.current?.click()}><Camera size={17} />拍照上传</button><span>图片将发送至 DeepSeek 分析，请遮盖姓名等个人信息</span></div>
-            {selected.length > 0 && <div className="file-list" ref={uploadReviewRef}><div className="upload-ready" role="status"><CheckCircle2 size={17} />已添加 {selected.length} 张照片。可继续添加，或检查后点击下方“开始智能分析”。</div>
-              {selected.map((item, index) => <div className="selected-file" key={item.preview}><img src={item.preview} alt={`待上传第 ${index + 1} 张`} /><div><strong>{item.file.name}</strong><small>{(item.file.size / 1024 / 1024).toFixed(1)} MB</small></div><button disabled={uploading} aria-label={`移除第 ${index + 1} 张图片`} onClick={() => setSelected(current => current.filter(file => file !== item))}><X size={17} /></button></div>)}
-              <button className="analyze-button" onClick={analyze} disabled={uploading || trialExpired}>{uploading ? <><LoaderCircle className="spin" size={18} />正在批改并分析...</> : trialExpired ? <>体验已到期，暂不能分析</> : <><Sparkles size={18} />开始智能分析 <ArrowRight size={17} /></>}</button>
+            <fieldset className="upload-metadata"><legend>这次要做什么？</legend><label>目的<select value={uploadIntent} onChange={e=>setUploadIntent(e.target.value)}><option value="marked">整理已批改作业</option><option value="check">检查未批改作业</option><option value="collect">收集不会做 / 复习题</option></select></label><label>作业名称<input value={uploadTitle} maxLength={200} onChange={e=>setUploadTitle(e.target.value)} placeholder="可选，默认使用照片名称"/></label><label>学科<select value={uploadSubject} onChange={e=>setUploadSubject(e.target.value)}>{subjectNames.map(s=><option key={s}>{s}</option>)}</select></label><label>年级<input value={uploadGrade} maxLength={60} onChange={e=>setUploadGrade(e.target.value)}/></label><label>作业日期<input type="date" value={uploadDate} onChange={e=>setUploadDate(e.target.value)}/></label></fieldset>
+            <button type="button" className="upload-zone" disabled={uploading} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); addFiles(event.dataTransfer.files); }} onClick={() => fileRef.current?.click()}><span className="upload-illustration"><UploadCloud size={31} /></span><strong>点击上传，或将图片拖到这里</strong><span>支持 JPG、PNG · 最多 4 张</span><span className="upload-select">选择图片 <Plus size={16} /></span></button>
+            <div className="upload-actions"><button disabled={uploading} onClick={() => cameraRef.current?.click()}><Camera size={17} />拍照上传</button><span>照片由百度 OCR 识别并存入私有云存储，请先遮盖姓名等个人信息</span></div>
+            {selected.length > 0 && <div className="file-list" ref={uploadReviewRef}><div className="upload-ready" role="status"><CheckCircle2 size={17} />已添加 {selected.length} 张照片。可继续添加，或检查后点击下方“保存并识别，进入核对”。</div>
+              {selected.map((item, index) => <div className="selected-file" key={item.preview}><img src={item.preview} style={{transform:`rotate(${item.rotation}deg)`}} alt={`待上传第 ${index + 1} 张`} /><div><strong>第 {index+1} 页 · {item.file.name}</strong><small>{(item.file.size / 1024 / 1024).toFixed(1)} MB</small><button disabled={uploading||index===0} onClick={()=>movePhoto(index,-1)}>上移</button><button disabled={uploading||index===selected.length-1} onClick={()=>movePhoto(index,1)}>下移</button><button disabled={uploading} onClick={()=>{uploadRequestKey.current='';setSelected(v=>v.map((p,i)=>i===index?{...p,rotation:(p.rotation+90)%360}:p));}}>旋转90°</button></div><button disabled={uploading} aria-label={`移除第 ${index + 1} 张图片`} onClick={() => {uploadRequestKey.current='';setSelected(current => current.filter(file => file !== item));}}><X size={17} /></button></div>)}
+              <button className="analyze-button" onClick={analyze} disabled={uploading || trialExpired}>{uploading ? <><LoaderCircle className="spin" size={18} />正在保存照片...</> : trialExpired ? <>体验已到期，暂不能分析</> : <><Sparkles size={18} />保存并识别，进入核对 <ArrowRight size={17} /></>}</button>
               {uploading && <div className="analysis-progress" role="status" aria-live="polite">
                 <div className="analysis-progress-track" role="progressbar" aria-label="正在批改和分析作业"><span /></div>
                 <p className="analysis-tip"><Lightbulb size={15} aria-hidden="true" /><span>{analysisTips[tipIndex]}</span></p>
               </div>}
             </div>}
-            {aiReady === false && <p className="service-note">自动分析服务待配置。页面与错题本已就绪，配置后即可处理图片。</p>}
+            {(aiReady === false || ocrReady === false || storageReady === false) && <p className="service-note">照片识别、云存储或分析服务待配置，暂时无法处理新照片。</p>}
           </section>
-          <section className="panel process-panel"><div className="panel-heading"><div><span className="section-kicker">HOW IT WORKS</span><h2>从拍照到掌握</h2><p>只需简单三步，理清每一次失误。</p></div></div><div className="steps"><div className="step"><span className="step-number">01</span><div><strong>上传图片</strong><p>拍摄已批改或未批改作业，清晰显示题目和作答。</p></div><span className="step-icon lavender"><Camera size={20} /></span></div><div className="step"><span className="step-number">02</span><div><strong>逐题批改</strong><p>结合已有批改或智能判题，展示对错与解题思路。</p></div><span className="step-icon coral"><Lightbulb size={20} /></span></div><div className="step"><span className="step-number">03</span><div><strong>归档巩固</strong><p>按科目、时间保存，按需练习 1–5 道类似题。</p></div><span className="step-icon mint"><BookOpen size={20} /></span></div></div><div className="process-footer"><CheckCircle2 size={17} />错题仅对登录的你可见</div></section></div>
+          <section className="panel process-panel"><div className="panel-heading"><div><span className="section-kicker">HOW IT WORKS</span><h2>从拍照到掌握</h2><p>只需简单三步，理清每一次失误。</p></div></div><div className="steps"><div className="step"><span className="step-number">01</span><div><strong>上传图片</strong><p>拍摄已批改或未批改作业，清晰显示题目和作答。</p></div><span className="step-icon lavender"><Camera size={20} /></span></div><div className="step"><span className="step-number">02</span><div><strong>逐题批改</strong><p>依据识别文字分析；信息不足的题目保留待核对。</p></div><span className="step-icon coral"><Lightbulb size={20} /></span></div><div className="step"><span className="step-number">03</span><div><strong>归档巩固</strong><p>按科目、时间保存，按需练习 1–5 道类似题。</p></div><span className="step-icon mint"><BookOpen size={20} /></span></div></div><div className="process-footer"><CheckCircle2 size={17} />错题仅对登录的你可见</div></section></div>
 
           {/* 学习成长追踪与薄弱学科分布看板 */}
           <section className="study-tracker-card" aria-label="错题与练习概况" aria-busy={loadingList}>
@@ -874,10 +946,10 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
                 <span className="tracker-efficiency-tag">练习覆盖 {generatedRate}%</span>
               </div>
               <h3>错题与练习概况</h3>
-              <p>{loadingList ? "正在读取你的学习记录…" : `已归档 ${mistakes.length} 道错题，其中 ${practicedMistakesCount} 道已生成类似题。生成练习不代表已经掌握。`}</p>
+              <p>{loadingList ? "正在读取你的学习记录…" : `已归档 ${mistakes.length} 道题目，其中 ${practicedMistakesCount} 道已生成类似题。生成练习不代表已经掌握。`}</p>
               <div className="tracker-stats-grid">
                 <div className="tracker-stat-box">
-                  <span>已归档错题</span>
+                  <span>已归档题目</span>
                   <strong>{mistakes.length}</strong>
                 </div>
                 <div className="tracker-stat-box">
@@ -958,21 +1030,29 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
           )}
           <section className="feature-links" aria-label="学习工具"><button type="button" onClick={() => setTab("knowledge")}><span className="feature-link-icon"><Network size={20} /></span><span><strong>查看知识图谱</strong><small>找出重复出错的知识点</small></span><ArrowRight size={17} /></button><button type="button" onClick={() => openPractice()}><span className="feature-link-icon peach"><ClipboardList size={20} /></span><span><strong>生成单元练习卷</strong><small>在线作答、批改并下载 Word</small></span><ArrowRight size={17} /></button><button type="button" onClick={() => setTab("essay")}><span className="feature-link-icon mint"><PenLine size={20} /></span><span><strong>分析英语作文</strong><small>照片识别、逐句批改与润色</small></span><ArrowRight size={17} /></button></section>
           <div className="daily-actions"><button type="button" onClick={() => applyDates(true)}><CalendarDays size={16} />整理今日错题</button></div>
-          <section className="recent-section"><div className="section-heading"><div><span className="section-kicker">YOUR PROGRESS</span><h2>最近整理</h2></div><button onClick={() => setTab("notebook")}>查看全部 <ArrowRight size={16} /></button></div>{loadingList ? <div className="empty-recent"><LoaderCircle className="spin" size={20} />正在加载错题本...</div> : recent.length ? <div className="recent-list">{recent.map(item => <button key={item.id} className="recent-item" onClick={() => { setSubject(item.subject); setQuery(item.question.slice(0, 12)); setTab("notebook"); }}><SubjectPill subject={item.subject} /><span>{item.question}</span><small>{formatDate(item.createdAt)}</small><ArrowRight size={16} /></button>)}</div> : <div className="empty-recent"><div className="empty-icon"><BookOpen size={24} /></div><div><strong>你的错题本还很清爽</strong><p>上传第一张试卷，开始积累属于自己的学习地图。</p></div></div>}</section>
+          <UploadHistory compact refreshKey={historyVersion} onOpen={openUpload} onAll={()=>setTab("history")}/>
+
         </>}
-        {tab === "results" && analysis && <>
-          <section className="page-intro"><span className="section-kicker">GRADING COMPLETE</span><h1>批改与分析完成 <span className="success-check"><Check size={22} /></span></h1><p><MathText value={analysis.summary || "已完成图片分析。"} /></p></section>
-          <div className="result-summary"><div><span>识别科目</span><SubjectPill subject={analysis.subject} /></div><div><span>批改方式</span><strong>{analysis.gradingMode === "marked" ? "参考已有批改" : analysis.gradingMode === "mixed" ? "已有批改 + 智能批改" : "智能批改"}</strong></div><div><span>判定正确</span><strong>{correctCount} 道</strong></div><div><span>发现错题</span><strong>{analysis.mistakes.length} 道</strong></div>{uncertainCount > 0 && <div><span>待核对</span><strong>{uncertainCount} 道</strong></div>}</div>
+        {tab === "history" && <UploadHistory refreshKey={historyVersion} onOpen={openUpload} onAll={()=>setTab("history")} onCollect={collectUploads}/>}
+        {tab === "results" && <div className="daily-actions"><button onClick={()=>setTab("history")}>返回分析记录</button><button onClick={()=>{setTab("home");scrollToUpload();}}>上传新作业</button></div>}
+        {tab === "results" && (recordLoading || !record && recordError || !activeUploadId) && <div className="empty-state" role={recordError?"alert":"status"}>{recordLoading?<><LoaderCircle className="spin"/>正在加载已保存的分析…</>:recordError?<><p>{recordError}</p><button onClick={()=>setRecordAttempt(v=>v+1)}>重新加载</button></>:<><p>请选择一条分析记录。</p><button onClick={()=>setTab("history")}>查看分析记录</button></>}</div>}
+        {tab === "results" && recordError && record && <div className="notice-card" role="alert">刷新失败：{recordError}。当前编辑仍保留。<button onClick={()=>setRecordAttempt(v=>v+1)}>重试刷新</button></div>}
+        {tab === "results" && !recordLoading && analysis && record && <>
+          <section className="page-intro"><span className="section-kicker">SAVED HOMEWORK</span><h1>{record.hasAnalysis ? uncertainCount>0?"分析已保存 · 有题目待核对":"分析已保存" :record.status==="processing"?"正在分析":record.status==="failed"?"处理未完成":record.questions.length?"识别已保存 · 请核对确认":"历史作业记录"}</h1><p><MathText value={analysis.summary || "已完成图片分析。"} /></p></section>
+          {record.hasAnalysis && <div className="result-summary"><div><span>识别科目</span><SubjectPill subject={analysis.subject} /></div><div><span>批改方式</span><strong>{analysis.gradingMode === "marked" ? "参考已有批改" : analysis.gradingMode === "mixed" ? "已有批改 + 智能批改" : "智能批改"}</strong></div><div><span>判定正确</span><strong>{correctCount} 道</strong></div><div><span>分析判错</span><strong>{incorrectCount} 道</strong></div><div><span>当前归档</span><strong>{analysis.mistakes.length} 道</strong></div>{uncertainCount > 0 && <div><span>待核对</span><strong>{uncertainCount} 道</strong></div>}</div>}
           <div className="notice-card"><Lightbulb size={17} /><span>智能批改仅供学习参考，请核对题目、作答和答案；不清楚的题不会自动归档为错题。<MathText value={analysis.uncertainNote} /></span></div>
-          {grading.length > 0 && <section className="grading-panel"><h2>逐题批改</h2><div className="grading-list">{grading.map((item, index) => <div className="grading-row" key={`${item.pageNumber}-${item.questionLabel}-${index}`}><span className={`grading-verdict ${item.verdict}`}>{item.verdict === "correct" ? "正确" : item.verdict === "incorrect" ? "错误" : "待核对"}</span><div><strong>第 {item.pageNumber} 页 · <MathText value={item.questionLabel} /></strong><p><MathText value={item.comment} /></p></div></div>)}</div></section>}
+          <UploadRecord key={record.id} onSaved={()=>void refreshCurrentUpload()} record={record} busy={uploading} trialExpired={trialExpired} onRetry={retryUpload} onViewPhoto={(url,title)=>setLightboxImage({url,title})}/>
+          {grading.length > 0 && record.ocrPages.length === 0 && <section className="grading-panel"><h2>逐题批改</h2><div className="grading-list">{grading.map((item, index) => <div className="grading-row" key={`${item.pageNumber}-${item.questionLabel}-${index}`}><span className={`grading-verdict ${item.verdict}`}>{item.verdict === "correct" ? "正确" : item.verdict === "incorrect" ? "错误" : "待核对"}</span><div><strong>第 {item.pageNumber} 页 · <MathText value={item.questionLabel} /></strong><p><MathText value={item.comment} /></p></div></div>)}</div></section>}
           {resultMistakes.length > 0 && <div className="daily-actions"><button type="button" onClick={() => openPrintSettings(resultMistakes)}>整理这批错题</button><button type="button" onClick={() => { const day = beijingDate(resultMistakes[0].createdAt); setDates({ date: day, dateFrom: "", dateTo: "" }); setDateInput(day); setDateMode("day"); setMonth(""); setDateError(""); setTab("notebook"); }}>查看归档当日错题</button></div>}
-          {resultMistakes.length ? <><BatchToolbar items={resultMistakes} allItems={mistakes} selectedIds={selectedMistakeIds} count={batchCount} onCountChange={setBatchCount} onToggleAll={toggleAllMistakes} onClear={() => { setSelectedMistakeIds([]); setBatchNotice(""); }} onGenerate={generateSimilarBatch} onExport={openPrintSettings} busy={batchBusy || busySimilar !== null || exportingWord} progress={batchProgress} notice={batchNotice} trialExpired={trialExpired} /><div className="question-stack">{resultMistakes.map(item => <MistakeCard key={item.id} item={item} onSimilar={requestSimilar} onExport={exportMistake} onDelete={removeMistake} onSelect={toggleMistake} selectedForBatch={selectedMistakeIds.includes(item.id)} batchBusy={batchBusy} busy={busySimilar === item.id} exportingWord={exportingWord} trialExpired={trialExpired} reflections={reflections} onViewPhoto={(url, title) => setLightboxImage({ url, title })} />)}</div></> : <div className="empty-state"><CheckCircle2 size={42} /><h2>没有确认的错题</h2><p>如果题目或作答不清晰，请换一张更清晰的照片再试。</p></div>}
+          {resultMistakes.length ? <><BatchToolbar items={resultMistakes} allItems={mistakes} selectedIds={selectedMistakeIds} count={batchCount} onCountChange={setBatchCount} onToggleAll={toggleAllMistakes} onClear={() => { setSelectedMistakeIds([]); setBatchNotice(""); }} onGenerate={generateSimilarBatch} onExport={openPrintSettings} busy={batchBusy || busySimilar !== null || exportingWord} progress={batchProgress} notice={batchNotice} trialExpired={trialExpired} /><div className="question-stack">{resultMistakes.map(item => <MistakeCard key={item.id} item={item} onSimilar={requestSimilar} onExport={exportMistake} onDelete={removeMistake} onSelect={toggleMistake} selectedForBatch={selectedMistakeIds.includes(item.id)} batchBusy={batchBusy} busy={busySimilar === item.id} exportingWord={exportingWord} trialExpired={trialExpired} reflections={reflections} onViewPhoto={(url, title) => setLightboxImage({ url, title })} />)}</div></> : <div className="empty-state"><BookOpen size={42} /><h2>{!record.hasAnalysis?"当前仅展示已保存资料":uncertainCount?"待核对题目尚未归档为错题":"没有确认的错题"}</h2><p>{uncertainCount?"请对照上方原图和识别文字核对；这不表示所有题目都正确。":"这次上传保留在分析记录中，可以随时重新打开。"}</p></div>}
           <button className="bottom-primary" onClick={() => { setTab("home"); fileRef.current?.click(); }}><Plus size={18} />继续上传</button>
         </>}
         {tab === "knowledge" && <KnowledgeMap mistakes={mistakes} papers={papers} initialSubject={knowledgeSubject} initialPoint={knowledgePoint} trialExpired={trialExpired} aiReady={aiReady} onTrialExpired={() => setTrialExpired(true)} onPractice={openPractice} onOpenMistake={item => { setSubject(item.subject); setQuery(item.question.slice(0, 30)); setMonth(""); setTab("notebook"); }} />}
+        {tab === "practice" && <div className="daily-actions"><button onClick={()=>setTab("knowledge")}>知识点回顾</button><button onClick={()=>setTab("notebook")}>从错题本选择原题重做</button></div>}
         {tab === "practice" && <UnitPractice subjects={subjects} papers={papers} weakPoints={mistakes} initialSubject={practiceSubject} initialUnit={practiceUnit} initialPoint={practicePoint} trialExpired={trialExpired} aiReady={aiReady} onSaved={savePaperSummary} onTrialExpired={() => setTrialExpired(true)} onReviewPoint={(subjectName, pointName) => { setKnowledgeSubject(subjectName); setKnowledgePoint(pointName); setTab("knowledge"); }} />}
-        {tab === "essay" && <EssayAnalysis trialExpired={trialExpired} aiReady={aiReady} onTrialExpired={() => setTrialExpired(true)} />}
+        {tab === "essay" && <EssayAnalysis trialExpired={trialExpired} aiReady={aiReady} ocrReady={ocrReady} onTrialExpired={() => setTrialExpired(true)} />}
         {tab === "notebook" && <>
+          <div className="daily-actions"><button onClick={()=>void retrySelectedOriginal()}>原题重做（选一道题）</button><button onClick={()=>{setPrintOpen(true);setPrintIds([]);printDraft.reload();}}>恢复 / 查看服务端打印草稿</button></div>
           <section className="page-intro notebook-intro">
             <span className="section-kicker">MY MISTAKE BOOK</span>
             <h1>我的错题本</h1>
@@ -1076,7 +1156,7 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
         </>}
       </div>
     </main>
-    <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={event => { addFiles(event.target.files); event.target.value = ""; }} />
+    <input ref={fileRef} type="file" accept="image/jpeg,image/png" multiple hidden onChange={event => { addFiles(event.target.files); event.target.value = ""; }} />
     <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={event => { addFiles(event.target.files); event.target.value = ""; }} />
 
     {/* 原卷大图灯箱预览 */}
@@ -1092,6 +1172,6 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
       </div>,
       document.body
     )}
-    {printIds !== null && <PrintSettings items={printItems} options={printOptions} onOptions={options => { setPrintOptions(options); printOptionsChosen.current = true; setExportFile(null); }} onItems={ids => { setPrintIds(ids); setExportFile(null); setPrintError(""); }} onClose={() => { if (!exportingWord && !savingPrintDrafts) setPrintIds(null); }} onGenerate={() => void exportMistakes(printItems, printOptions)} busy={exportingWord || savingPrintDrafts} progress={printProgress} error={printError} download={exportFile} unsaved={unsavedPrintItems.length} onSaveDrafts={() => void savePrintDrafts()} onDiscardDrafts={() => { unsavedPrintItems.forEach(item => discardDraft(item.id)); setPrintError(""); }} />}
+    {printOpen && printIds !== null && <PrintSettings draftController={printDraft} items={printItems} options={printOptions} onOptions={options => { setPrintOptions(options); printOptionsChosen.current = true; setExportFile(null); }} onItems={ids => { setPrintIds(ids); setExportFile(null); setPrintError(""); }} onClose={() => { if (!exportingWord && !savingPrintDrafts) {setPrintOpen(false);void printDraft.save();} }} onGenerate={() => void exportMistakes(printItems, printOptions)} busy={exportingWord || savingPrintDrafts} progress={printProgress} error={printError} download={exportFile} unsaved={unsavedPrintItems.length} onSaveDrafts={() => void savePrintDrafts()} onDiscardDrafts={() => { unsavedPrintItems.forEach(item => discardDraft(item.id)); setPrintError(""); }} />}
   </div></>;
 }

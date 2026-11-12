@@ -2,9 +2,9 @@
 
 ## 产品与运行方式
 
-拍照上传作业或试卷，调用 DeepSeek 分析并归档错题；支持类似题、知识图谱、单元练习卷、英语作文分析和账号管理后台。
+拍照上传作业或试卷，调用百度 paper_cut_edu 识别，再交由 DeepSeek 进行文本分析并归档错题；支持类似题、知识图谱、单元练习卷、英语作文分析和账号管理后台。
 
-应用使用 vinext、Vite、React、TypeScript，服务端在 Workers 运行环境中执行，自托管服务器使用 Wrangler、PM2 和 nginx。数据库使用真实 PostgreSQL，通过 `pg` 驱动执行参数化 SQL；Drizzle 的 PostgreSQL schema 在 `db/schema.ts`。图片保存在 R2 接口提供的对象存储，自托管时其持久目录为 `.wrangler/state`。
+应用使用 vinext、Vite、React、TypeScript，服务端在 Workers 运行环境中执行，自托管服务器使用 Wrangler、PM2 和 nginx。数据库使用真实 PostgreSQL，通过 `pg` 驱动执行参数化 SQL；Drizzle 的 PostgreSQL schema 在 `db/schema.ts`。新图片经 `lib/storage.ts` 的 S3 适配器保存在私有 Cloudflare R2，键包含 `/cloud/`；自托管的 `.wrangler/state` 仅用于原有图片读取，禁止将其当作云存储。
 
 错题本与分析结果支持勾选多题合并下载 Word；批量举一反三每次最多 10 道错题、每道 1–5 道新题，并逐题显示进度。上传照片后定位到预览和分析按钮。数学计算和图表题导出保留原题图片；JPG/PNG 支持服务器直接下载，WEBP 或超过 30 题使用浏览器转换，浏览器能定位题目区域时优先裁剪。Word 使用紧凑 A4 留白，答案集中置于题目后。单元练习支持 1–30 题及选择、填空、图表、解答混合题型。
 
@@ -90,3 +90,24 @@ SSH 别名 `server-198`，项目路径 `/opt/shiti-mistake-notebook`，PM2 进�
 - 默认账号：`docs/architecture/default-accounts.md`
 
 项目规则只维护在本文件，根目录 `CLAUDE.md` 仅包含 `@AGENTS.md`。
+
+## 云存储和 OCR
+
+新照片先存真实 R2，再由百度试卷切题 OCR 识别，禁止回退到视觉模型识字；OCR 原文、作答和坐标不得用模型输出覆盖。百度接口不支持 WEBP，本次新上传仅接受 JPG/PNG，并验证 URL 编码后的 10MB 上限和 15–8192px 尺寸。含图形、低置信度及不完整作答暂列待核对。
+
+`.dev.vars` 另需 `R2_ACCOUNT_ID`、`R2_BUCKET_NAME`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、`BAIDU_OCR_API_KEY`、`BAIDU_OCR_SECRET_KEY`；密钥不得输出或提交。切换前应用 `db/migrations/0006_upload_ocr.sql`，将原始 OCR 结果保存到 `uploads.ocr_result`。`POST /api/ocr` 仅做鉴权后的识别联调，不调用模型。现有本地图片不自动迁移，删除和导出均通过统一存储适配器。
+
+## 分析记录与生命周期
+
+上传记录与确认错题为独立实体。工作台历史必须读取 uploads，禁止用 mistakes 是否为空判断是否上传过。完整判题报告保存在 uploads.analysis_result，详情链接使用 view=results&upload=<id>，通过账号级 API 恢复；历史读取不调用模型。0007 迁移增加状态、错误与尝试标识。
+
+建立上传记录后，上游失败必须保留原图与已有 OCR，并保留可重试记录。上传处理使用processing_jobs持久任务、租约和attempt围栏；先保存OCR与逐题确认版本，再由明确操作分析或人工归档。题目修改后历史报告保留且标过期；旧输入不得覆盖当前汇总。待核对不能显示全对；人工错题与复习收藏分别归档，唯一source_question_id拦截重复。
+
+
+## 本地全量需求升级（未发布）
+
+规格与证据：`docs/specs/changes/requirements-consolidated.md` 1.0、`docs/delivery/features/requirements-implementation.md`。正式追加迁移0008–0012包括默认档案/隔离、题目版本与任务、学习轮次、草稿和学科别名；原ID和图片键保留。所有业务/附件/导出执行档案校验，后台任务固定创建时档案；人工编辑/归档/打印不依赖AI。
+
+部署前备份并应用正式迁移，配置TASK_WORKER_SECRET（32字符以上）及PM2 shiti-processing-worker；`scripts/processing-worker.mjs`通过私有密钥调用/api/tasks/run。未启动执行器不能承诺关页继续。新增原始照片与旋转版本均跟踪upload_objects，管理员删除须一并清理。Word图片宽60–165mm，长图分段；实际Word/WPS和纸面验收单列。
+
+本地验证禁止迁移public，使用`scripts/profile-isolation.verify.mjs`生成真实资料隔离schema。Typescript、lint、Workers HTTP、持久执行器及浏览器结果见交付记录；不存在的真实作文和孩子作答不得编造。

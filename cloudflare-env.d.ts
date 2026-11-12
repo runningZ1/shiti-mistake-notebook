@@ -1,6 +1,13 @@
 declare namespace Cloudflare {
   interface Env {
     DATABASE_URL?: string;
+    TASK_WORKER_SECRET?: string;
+    R2_ACCOUNT_ID?: string;
+    R2_BUCKET_NAME?: string;
+    R2_ACCESS_KEY_ID?: string;
+    R2_SECRET_ACCESS_KEY?: string;
+    BAIDU_OCR_API_KEY?: string;
+    BAIDU_OCR_SECRET_KEY?: string;
     PAYMENT_ENABLED?: string;
     PAYMENT_TEST_ENABLED?: string;
     PAYMENT_GATEWAY_URL?: string;

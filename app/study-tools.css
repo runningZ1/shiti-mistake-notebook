@@ -262,3 +262,8 @@
   .study-tools .spin { animation: none; }
   .study-tools *, .study-tools *::before, .study-tools *::after { scroll-behavior: auto; transition-duration: 0s; }
 }
+
+@media (max-width: 760px) {
+  .study-tools :is(input:not([type="radio"]):not([type="checkbox"]), textarea, select) { font-size: 16px; min-height: 44px; }
+  .study-tools button { min-height: 44px; }
+}

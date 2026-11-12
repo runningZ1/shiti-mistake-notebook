@@ -173,3 +173,11 @@
   .ac-dialog footer { padding: 12px 16px max(12px, env(safe-area-inset-bottom)); }
   .ac-dialog footer button { flex: 1; }
 }
+
+@media (max-width: 720px) {
+  .ac-shell :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea), .ac-dialog :is(input:not([type="checkbox"]), select, textarea) { font-size: 16px; min-height: 44px; }
+  .ac-shell button, .ac-dialog button { min-height: 44px; }
+  .ac-dialog > header button { flex-basis: 44px; width: 44px; }
+  .ac-sidebar { padding-top: max(16px, env(safe-area-inset-top)); }
+  .ac-content { padding-bottom: max(32px, env(safe-area-inset-bottom)); }
+}

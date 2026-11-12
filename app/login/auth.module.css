@@ -46,3 +46,12 @@
 @media (max-width: 850px) { .layout { grid-template-columns: minmax(0, 440px); justify-content: center; gap: 24px; margin-top: 16px; } .intro { display: none; } }
 @media (max-width: 480px) { .page { padding-bottom: 24px; } .header { padding: 16px; } .brandMark { width: 35px; height: 35px; border-radius: 11px; } .brand strong { font-size: 21px; } .brand small { display: none; } .layout { padding: 0 16px; margin-top: 12px; } .card { padding: 26px 22px; border-radius: 16px; } .card h1 { font-size: 25px; } .form input { font-size: 16px; } .form { gap: 16px; } .subtitle { margin-bottom: 22px; } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } .form input { transition: none; } }
+
+@media (max-width: 850px) {
+  .form input { font-size: 16px; }
+}
+@media (max-width: 480px) {
+  .header { padding-top: max(16px, env(safe-area-inset-top)); }
+  .page { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+  .switch a { min-height: 44px; }
+}

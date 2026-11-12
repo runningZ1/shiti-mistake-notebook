@@ -54,12 +54,12 @@ export default function ProfileSwitcher({ beforeSwitch }: { beforeSwitch?: () =>
   }
 
   return <section aria-label="学习档案" className="profile-switcher">
-    <label>当前学习档案 <select aria-label="选择学习档案" disabled={busy} value={current} onChange={event => void select(event.target.value)}>
+    <label><span>当前学习档案</span><select aria-label="选择学习档案" disabled={busy} value={current} onChange={event => void select(event.target.value)}>
       {!current && <option value="">请选择档案</option>}
       {profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}{profile.gradeLevel ? ` · ${profile.gradeLevel}` : ""}</option>)}
     </select></label>
     <button type="button" onClick={()=>setManaging(v=>!v)}>{managing?'收起档案管理':'管理档案'}</button>
-    {managing&&<><button type="button" disabled={busy || !current} onClick={() => {
+    {managing&&<div className="profile-management"><button type="button" disabled={busy || !current} onClick={() => {
       const profile = profiles.find(item => item.id === current);
       if (profile) { setEditing(true); setName(profile.name); setGradeLevel(profile.gradeLevel); }
     }}>编辑当前档案</button>
@@ -70,7 +70,7 @@ export default function ProfileSwitcher({ beforeSwitch }: { beforeSwitch?: () =>
       {editing && <button type="button" disabled={busy} onClick={() => { setEditing(false); setName(""); setGradeLevel(""); }}>取消</button>}
     </form>
     <small>资料按当前档案保存；新增后请选择该档案。</small>
-    </>}
+    </div>}
     {error && <p role="alert">{error}</p>}
   </section>;
 }

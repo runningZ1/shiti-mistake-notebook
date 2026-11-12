@@ -160,4 +160,59 @@
 .upload-history-selection{display:flex;align-items:center;gap:10px}.upload-history-selection>button{flex:1;min-width:0}
 .today-tasks{display:flex;flex-wrap:wrap;gap:14px;align-items:center}.today-tasks h2{font-size:17px}.today-tasks button{border:1px solid #ddd6fe;padding:8px;border-radius:8px;background:#faf5ff}
 @media(max-width:640px){.question-bounds{grid-template-columns:repeat(2,minmax(0,1fr))}.top-right{flex-wrap:wrap}.profile-switcher{max-width:170px}}
-.profile-switcher{display:flex;align-items:center;gap:6px;font-size:12px;position:relative}.profile-switcher>label{display:flex;align-items:center;gap:5px}.profile-switcher select,.profile-switcher input,.profile-switcher button{border:1px solid #e2e8f0;border-radius:6px;background:white;padding:6px;color:#475569;font-size:12px}.profile-switcher select{max-width:160px}.profile-switcher form{position:absolute;right:0;top:100%;background:white;box-shadow:0 8px 24px #0f172a22;z-index:30;padding:16px;border:1px solid #e2e8f0;border-radius:9px;display:grid;gap:8px;min-width:230px}.profile-switcher>small{display:none}
+.profile-switcher{display:flex;align-items:center;gap:6px;font-size:12px;position:relative}.profile-switcher>label{display:flex;align-items:center;gap:5px}.profile-switcher select,.profile-switcher input,.profile-switcher button{border:1px solid #e2e8f0;border-radius:6px;background:white;padding:6px;color:#475569;font-size:12px}.profile-switcher select{max-width:160px}.profile-switcher>small{display:none}
+
+/* Keep profile management in one bounded popover, including its edit action. */
+.profile-management { position: absolute; right: 0; top: calc(100% + 8px); z-index: 70; width: 280px; max-width: calc(100vw - 32px); max-height: 65dvh; overflow-y: auto; padding: 16px; border: 1px solid #e2e8f0; border-radius: 9px; background: #fff; box-shadow: 0 8px 24px #0f172a22; }
+.profile-management form { display: grid; gap: 10px; margin-top: 10px; }
+.profile-management input { width: 100%; min-width: 0; }
+.profile-management small { display: block; margin-top: 10px; line-height: 1.7; }
+
+/* Phones get a separate profile row instead of compressing every action into 60px. */
+@media (max-width: 760px) {
+  .app-shell .topbar { height: auto; min-height: 60px; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; padding: max(8px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left)); }
+  .app-shell .mobile-menu { width: 44px; height: 44px; }
+  .app-shell .breadcrumb { font-size: 13px; }
+  .app-shell .top-right { grid-column: 1 / -1; display: flex; flex-wrap: nowrap; width: 100%; min-width: 0; gap: 8px; }
+  .app-shell .profile-switcher { flex: 1; min-width: 0; max-width: none; }
+  .profile-switcher > label { flex: 1; min-width: 0; }
+  .profile-switcher > label > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .app-shell .profile-switcher select { width: 100%; min-width: 0; max-width: none; text-overflow: ellipsis; }
+  .profile-switcher > button { flex: none; white-space: nowrap; }
+  .profile-management { left: 0; right: auto; }
+  .app-shell .topbar-quick-snap { flex: none; min-height: 44px; font-size: 13px; }
+  .app-shell .content-wrap { padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right)); }
+  .app-shell .sidebar { padding-top: max(26px, env(safe-area-inset-top)); padding-bottom: max(22px, env(safe-area-inset-bottom)); }
+  .app-shell :is(button, .trial-upgrade-btn), .notebook-detail-panel button { min-height: 44px; }
+  .app-shell :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea), .notebook-detail-panel :is(input:not([type="checkbox"]), select, textarea) { min-width: 0; max-width: 100%; min-height: 44px; font-size: 16px; }
+  .app-shell :is(.panel, .question-card, .upload-record, .record-question, .question-fields, .upload-metadata) { min-width: 0; overflow-wrap: anywhere; }
+  .app-shell .filters { flex-wrap: wrap; }
+  .app-shell .filters label { flex: 1 1 130px; min-width: 0; }
+  .app-shell .upload-metadata { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .question-fields { margin-inline: 0; padding: 12px; }
+  .question-crop-preview { margin-inline: 0; }
+  .app-shell .question-fields label { min-width: 0; }
+  .app-shell .question-bounds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-shell .daily-actions { flex-wrap: wrap; gap: 8px; }
+  .app-shell .daily-actions button { flex: 1 1 130px; white-space: normal; }
+  .app-shell .selected-file > div { min-width: 0; }
+  .app-shell .selected-file strong { overflow-wrap: anywhere; }
+  .app-shell .selected-file button { width: 44px; flex: none; }
+  .app-shell .upload-history-selection { align-items: flex-start; }
+  .app-shell .upload-history-selection > input { margin-top: 16px; }
+  .app-shell .record-photos button { width: min(160px, 100%); }
+  .notebook-detail-panel { max-height: calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+  .notebook-detail-header button { width: 44px; flex: none; }
+  /* Details are portaled outside .app-shell, so they need their own wrapping rules. */
+  .notebook-detail-panel .question-top { flex-direction: column; align-items: flex-start; }
+  .notebook-detail-panel .question-tags { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+  .notebook-detail-panel .knowledge-tag { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .notebook-detail-panel .question-card { min-width: 0; overflow-wrap: anywhere; }
+  .notebook-detail-panel .question-actions { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+  .notebook-detail-panel .question-actions button { min-width: 44px; }
+  .lightbox-close-btn { width: 44px; height: 44px; }
+}
+@media (min-width: 761px) and (max-width: 1200px) {
+  .app-shell .topbar { height: auto; min-height: 70px; flex-wrap: wrap; padding-block: 12px; }
+  .app-shell .top-right { flex-wrap: wrap; gap: 10px; }
+}

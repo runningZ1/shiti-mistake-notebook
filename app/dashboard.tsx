@@ -457,6 +457,13 @@ export default function Dashboard({ name, trialEndsAt: originalTrialEndsAt, paid
     return () => { window.removeEventListener("keydown", onKeyDown); document.body.style.overflow = previousOverflow; trigger?.focus(); };
   }, [mobileMenu]);
 
+  useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 761px)");
+    const closeOnDesktop = () => { if (desktop.matches) setMobileMenu(false); };
+    desktop.addEventListener("change", closeOnDesktop);
+    return () => desktop.removeEventListener("change", closeOnDesktop);
+  }, []);
+
   const subjects = useMemo(() => [...new Set(mistakes.map(item => item.subject))], [mistakes]);
   const filtered = useMemo(() => mistakes.filter(item => {
     const day = beijingDate(item.createdAt);

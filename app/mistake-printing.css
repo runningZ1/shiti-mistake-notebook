@@ -75,3 +75,16 @@
 .printing-image-window { position: relative; overflow: hidden; outline: 1px dashed #bbb; }
 .printing-image-window img { position: absolute; max-width: none; object-fit: fill; }
 .printing-page-bottom { position: absolute; bottom: 8px; left: 0; right: 0; text-align: center; font-size: 10px; color: #64748b; }
+
+@media (max-width: 760px) {
+  .printing-backdrop { padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
+  .printing-panel { min-width: 0; max-height: calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+  .printing-body { min-height: 0; overscroll-behavior: contain; }
+  .printing-panel > header, .printing-panel > footer { flex-shrink: 0; }
+  .printing-panel button, .printing-panel a { min-height: 44px; }
+  .printing-panel header > button, .printing-order-actions button { min-width: 44px; min-height: 44px; }
+  .printing-panel :is(input:not([type="checkbox"]), select, textarea) { min-width: 0; min-height: 44px; font-size: 16px; }
+  .printing-options label, .printing-order li > div { min-width: 0; }
+  .printing-order li { flex-wrap: wrap; }
+  .printing-order-actions { flex-direction: row; flex-wrap: wrap; }
+}

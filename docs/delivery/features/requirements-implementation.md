@@ -101,3 +101,8 @@ SQLite导入兼容性已在真实现存源的独立schema验证63项：3个账�
 完整汇总：`work/requirements-verification/validation-summary.json`；HTTP：`work/requirements-verification/http-evidence.json`；真实任务：`work/requirements-verification/live-evidence.json`；最终导入：`work/profile-isolation/import-review-evidence.json`（脚本SHA-256为2bf54367b2e9f4d6484e244be5081862add50381cca1c19722c93d1c0a9c40bf）。正式迁移未在public/生产执行。验证进程结束时只关闭本会话创建的执行器、预览和loopback代理。
 
 Documentation Sync：当前需求状态、README、AGENTS、档案/打印/学习正文与本记录已同步。功能代码本地完成；D06、真实作文和真实家庭多孩使用按上表保留待验收，不声称全部实物验收或已上线。
+
+
+## 后续正式发布
+
+用户已另行授权提交、推送和部署。功能提交09daf84已完成服务器构建、正式迁移与双进程启动，原204条资料逐项保留，正式域名27项检查通过。上文未发布表述记录开发验收阶段历史；当前状态以[正式发布记录](requirements-release-20261112.md)为准，物理与家庭使用验收缺口保留。

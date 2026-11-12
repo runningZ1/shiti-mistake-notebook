@@ -104,10 +104,12 @@ SSH 别名 `server-198`，项目路径 `/opt/shiti-mistake-notebook`，PM2 进�
 建立上传记录后，上游失败必须保留原图与已有 OCR，并保留可重试记录。上传处理使用processing_jobs持久任务、租约和attempt围栏；先保存OCR与逐题确认版本，再由明确操作分析或人工归档。题目修改后历史报告保留且标过期；旧输入不得覆盖当前汇总。待核对不能显示全对；人工错题与复习收藏分别归档，唯一source_question_id拦截重复。
 
 
-## 本地全量需求升级（未发布）
+## 全量需求升级（2026-11-12已发布）
 
 规格与证据：`docs/specs/changes/requirements-consolidated.md` 1.0、`docs/delivery/features/requirements-implementation.md`。正式追加迁移0008–0012包括默认档案/隔离、题目版本与任务、学习轮次、草稿和学科别名；原ID和图片键保留。所有业务/附件/导出执行档案校验，后台任务固定创建时档案；人工编辑/归档/打印不依赖AI。
 
 部署前备份并应用正式迁移，配置TASK_WORKER_SECRET（32字符以上）及PM2 shiti-processing-worker；`scripts/processing-worker.mjs`通过私有密钥调用/api/tasks/run。未启动执行器不能承诺关页继续。新增原始照片与旋转版本均跟踪upload_objects，管理员删除须一并清理。Word图片宽60–165mm，长图分段；实际Word/WPS和纸面验收单列。
 
 本地验证禁止迁移public，使用`scripts/profile-isolation.verify.mjs`生成真实资料隔离schema。Typescript、lint、Workers HTTP、持久执行器及浏览器结果见交付记录；不存在的真实作文和孩子作答不得编造。
+
+2026-11-12发布事实见`docs/delivery/features/requirements-release-20261112.md`：正式迁移0006–0012已应用，主应用及后台执行器均启动，原204条记录逐项保留；实际纸面验收仍单列。

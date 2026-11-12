@@ -24,11 +24,11 @@
 
 本功能已于2026年11月11日 21:48:58（北京时间）发布，生产已应用0004、0005正式迁移，既有真实账号、学习记录及图片保留。新部署和仍未迁移的本地开发数据库须先应用`db/migrations/0005_mistake_reflection.sql`。[生产发布记录](docs/delivery/features/daily-mistake-printing-release-20261111.md)说明备份、数据核对和验收边界；家庭多孩档案尚未纳入本次功能。
 
-## 全量流程升级（本地实现，未发布）
+## 全量流程升级（2026-11-12已上线）
 
 新增先核对后分析、题目文字/题框编辑与版本、人工归档及复习收藏；作业多选合并打印、图片物理尺寸与长图分段、服务器草稿；多孩子档案隔离、独立作答轮次、订正复习记录和作文版本。主导航为今日、作业、错题本、练习与复习、作文。
 
-需要先备份并应用正式0008–0012迁移（含尚未应用的0006–0007），配置TASK_WORKER_SECRET，并启动`ecosystem.config.cjs`中的shiti-processing-worker，才能由持久执行器在关页后继续OCR和分析。现有会员价格和期限不变。原题确认、人工归档、错因和打印不调用AI。实际Word/WPS分页、纸面打印和真实作文内容验收仍待完成。[实施与验证记录](docs/delivery/features/requirements-implementation.md)说明全部证据和边界。
+生产已备份并应用正式0006–0012迁移，配置TASK_WORKER_SECRET并启动`ecosystem.config.cjs`中的shiti-processing-worker；新部署同样须按此顺序完成。现有会员价格和期限不变。原题确认、人工归档、错因和打印不调用AI。实际Word/WPS分页、纸面打印和真实作文内容验收仍待完成。[实施与验证记录](docs/delivery/features/requirements-implementation.md)说明全部证据和边界。
 
 ## 本地开发
 
@@ -89,3 +89,5 @@ ssh server-198 "cd /opt/shiti-mistake-notebook && mkdir -p work && \
 ## 分析记录与刷新恢复
 
 上传历史、待核对和失败记录独立于错题本保存，可在工作台“最近分析”或侧栏“分析记录”找回。记录详情链接支持刷新与返回，分析失败保留原图及已有 OCR，可从同一记录继续。新环境需应用 `0007_upload_analysis_history.sql`。升级前未保存的判题结果不会凭空恢复；详情仍可查看原图和已保存文字。详见[产品流程 Review](docs/delivery/features/product-flow-review.md)。
+
+本次[正式发布记录](docs/delivery/features/requirements-release-20261112.md)包含功能提交、备份与204条旧资料逐记录保留核验及正式域名27项检查。
